@@ -316,6 +316,41 @@ def test_carrying_line_omitted_when_inventory_empty():
   assert "Carrying" not in out
 
 
+def test_chemical_state_line_renders_drug_highs_only():
+  pawn = PawnRecord(
+    pawn_id="600",
+    name_full="Junkie Joe",
+    label="Junkie",
+    role="colonist",
+    hediffs=(
+      Hediff("YayoHigh"),
+      Hediff("Drunk"),
+      Hediff("ArchotechEye", body_part="left eye"),
+      Hediff("PsychiteTolerance"),  # skip-listed
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Chemical/drug state: yayo high, drunk" in out
+  # Body-change line still emits the bionic but excludes the highs.
+  assert "Visible implants/injuries/body changes: archotech eye" in out
+  assert "yayo high" not in (
+    [ln for ln in out.splitlines()
+     if ln.startswith("Visible implants")][0]
+  )
+
+
+def test_chemical_state_line_omitted_when_no_highs():
+  pawn = PawnRecord(
+    pawn_id="601",
+    name_full="Sober Sam",
+    label="Sober",
+    role="colonist",
+    hediffs=(Hediff("ArchotechEye"),),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Chemical/drug state:" not in out
+
+
 def test_inspiration_renders_def_name_when_no_mod_data():
   pawn = PawnRecord(
     pawn_id="500",

@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from rimportrait.records import Hediff
+from rimportrait.translate.hediffs import (
+  describe_chemical_state,
+  describe_hediffs,
+  is_drug_high,
+)
+
+
+def test_is_drug_high_recognises_vanilla_high_suffix():
+  assert is_drug_high("YayoHigh")
+  assert is_drug_high("GoJuiceHigh")
+  assert is_drug_high("LuciferiumHigh")
+  assert is_drug_high("WakeUpHigh")
+  assert is_drug_high("SmokeleafHigh")
+  assert is_drug_high("PenoxycylineHigh")
+  assert is_drug_high("AmbrosiaHigh")
+
+
+def test_is_drug_high_recognises_drunk_and_modded():
+  assert is_drug_high("Drunk")
+  assert is_drug_high("HighOnSomethingModded")
+
+
+def test_is_drug_high_rejects_non_drug_defs():
+  # Non-hediff defs (memes / pawnkinds) happen to start with "High",
+  # but this predicate is only called on hediffs so the rejection
+  # here matters mostly as a guard against accidental cross-use.
+  assert not is_drug_high("HighCulture")
+  assert not is_drug_high("HighLife")
+  assert not is_drug_high("ArchotechEye")
+  assert not is_drug_high("BionicArm")
+  assert not is_drug_high("PsychiteTolerance")
+
+
+def test_describe_hediffs_excludes_drug_highs():
+  out = describe_hediffs((
+    Hediff("YayoHigh"),
+    Hediff("ArchotechEye", body_part="left eye"),
+    Hediff("Drunk"),
+  ))
+  assert out == ["archotech eye (left eye)"]
+
+
+def test_describe_chemical_state_returns_drug_highs_only():
+  out = describe_chemical_state((
+    Hediff("YayoHigh"),
+    Hediff("ArchotechEye", body_part="left eye"),
+    Hediff("Drunk"),
+    Hediff("PsychiteTolerance"),  # filtered by skip-list
+  ))
+  assert out == ["yayo high", "drunk"]
+
+
+def test_describe_chemical_state_threads_labels():
+  out = describe_chemical_state(
+    (Hediff("YayoHigh"),),
+    labels={"YayoHigh": "high on yayo"},
+  )
+  assert out == ["high on yayo"]

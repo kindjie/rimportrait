@@ -33,7 +33,7 @@ from .translate.favorite_color import describe_favorite_color
 from .translate.genes import describe_genes
 from .translate.hair import describe_gradient_mask, describe_hair_style
 from .translate._common import description_for, humanise
-from .translate.hediffs import describe_hediffs
+from .translate.hediffs import describe_chemical_state, describe_hediffs
 from .translate.inventory import describe_inventory
 from .translate.weapons import describe_weapon, qualifier_for_weapon
 from .translate.xenotype import describe_xenotype
@@ -436,6 +436,9 @@ def render_portrait(
     _line("Mood", p.mood),
     _line("Inspiration",
           _inspiration_value(p.inspiration, def_descriptions, def_labels)),
+    _line("Chemical/drug state",
+          ", ".join(describe_chemical_state(p.hediffs, def_labels))
+          or None),
     _line("Pose/activity", p.current_job),
     _line("Immediate setting", p.location),
     _line("Favorite color/accent",
@@ -489,6 +492,9 @@ def _person_block(
     _line("Mood", p.mood),
     _line("Inspiration",
           _inspiration_value(p.inspiration, def_descriptions, def_labels)),
+    _line("Chemical/drug state",
+          ", ".join(describe_chemical_state(p.hediffs, def_labels))
+          or None),
     _line("Pose/activity before portrait", p.current_job),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),

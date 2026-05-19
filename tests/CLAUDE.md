@@ -46,6 +46,12 @@
   inspiration def with mod-aware description fallback. InspirationDef
   is added to the mod-aware index so labels (shoot frenzy etc.) flow
   through automatically.
+- `test_chemical_state.py` — drug-high hediff partitioning. Vanilla
+  `*High` suffix, `Drunk`, and modded `HighOn*` prefix recognised by
+  `is_drug_high`. `describe_chemical_state` returns only those;
+  `describe_hediffs` excludes them so they appear on a dedicated
+  "Chemical/drug state" line near Inspiration rather than mixing
+  with permanent body changes.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)
