@@ -52,30 +52,93 @@ rimportrait sample.rws --pawn NAME --no-instruction
 Output is a `[PORTRAIT SUBJECT]` or `[FAMILY PORTRAIT SUBJECT]` block
 followed by a prompt-instruction for a downstream image-prompt LLM.
 
+## Rendered fields
+
+A `[PORTRAIT SUBJECT]` block emits the following lines when the source
+data is present (each line is omitted cleanly when empty):
+
+- **Identity** — Name, Role, Royal title (faction-overridden labels
+  like Empire's *Count → archon* flow through), Race/xenotype, Gender,
+  Age.
+- **Head and face** — hair color/gradient, beard, face/body tattoos
+  resolved to `label (Category style)` via `TattooDef.category`.
+- **State** — Traits, Personality (RimTalk Persona → backstory
+  fallback), Mood, Physical state (Food/Rest/Deathrest below 50 %, with
+  a severe tier below 25 %), Inspiration, Chemical/drug state,
+  Shambler state, Creepjoiner state, Pilot state, Commanded mechs (mech
+  entourage with count×label), Connections (tree/dryad bonds), Bonded
+  animals, Abilities, Psyfocus (band label + %), Pose/activity,
+  Immediate setting.
+- **Aesthetics** — Favorite color/accent, Visible genes/body traits,
+  Visible implants/injuries/body changes (hediff body-part indices
+  resolved to readable labels like *right tibia*, *little toe*).
+- **Gear** — three prominence buckets: **Worn armor/clothing**,
+  **Utility belts/gear** (belts/bandoliers/carriers/gunlinks/jump packs,
+  substring-matched to catch modded variants), **Wielded weapon**. Each
+  item carries stuff (material) + color + ideology style +
+  condition (worn / battered / ruined) qualifiers. Carried infants are
+  surfaced separately, baby carriers are marked `empty` when unused.
+- **Inventory** — Carrying (pack/inventory) summary with stack counts.
+- **Ideology** — Name, primary color, apparel color, description,
+  style aesthetic, memes.
+- **Map context** — biome, wealth tier, location summary.
+- **Apparel detail** — descriptive paragraph per worn item using
+  mod-aware descriptions.
+
+## Data-first principle
+
+Visual translation is left to the downstream image-prompt LLM. This
+project's job is to emit RimWorld def names plus the mod-aware
+`label` / `description` / `category` for each one — no curated phrase
+tables, no hand-written enums. Every translate function follows the
+same fallback chain:
+
+```
+mod description → mod label → humanised def slug
+```
+
+That means anything moddable (apparel, weapons, hair, genes, hediffs,
+xenotypes, inspirations, abilities, mechs, animals, tattoos, royal
+titles, creepjoiner forms/benefits/downsides/aggressives/rejections,
+inventory items, materials, …) round-trips through the mod-aware def
+index automatically. Adding a new modded def to your game adds it to
+the output with no code changes.
+
 ## Mod-dependent fields
 
-Several fields are populated only when the relevant RimWorld mod is
-installed; they're omitted cleanly when absent.
+A few fields require a specific mod to be present at all; they're
+omitted cleanly when absent.
 
 | Field | Source mod | Behaviour when absent |
 |---|---|---|
 | `Hair gradient: ...` | GradientHair | line omitted |
 | `Personality/expression: ...` | RimTalk (its `Hediff_Persona`) | falls back to backstory if the save has readable backstory titles, otherwise omitted |
-| Mod-specific apparel/hair/xenotype/gene/hediff defs | various | unknown defs degrade to humanised def name; unknown xenotypes get an "infer from listed genes" hint; unknown genes/invisible hediffs are dropped per the spec's visible-only rule |
+| Xenotype description | Biotech + (modded xenotype) | falls back to xenotype label → its defining xenogene list → humanised slug |
 
 ## Mod-aware def coverage
 
 The save's own `<meta><modIds>`/`<modSteamIds>`/`<modNames>` is
 parsed to learn the active mod set and load order, then every mod's
-`Defs/` is walked for descriptions, labels, and texture paths.
+`Defs/` is walked for descriptions, labels, categories, and texture
+paths. Covered def types include apparel, weapons, hair, genes,
+hediffs, xenotypes, ideologies, inspirations, abilities, mechs,
+animals (`ThingDef` with `race`), tattoos, royal titles, creepjoiner
+form/benefit/downside/aggressive/rejection defs, and `BodyDef`
+(walked pre-order so hediff `<part><index>N</index>` integers resolve
+to readable part labels like *right tibia*).
 
-- ParentName/Abstract XML inheritance is resolved (with cycle guard)
+- ParentName/Abstract XML inheritance is resolved (with cycle guard),
+  including the `category` field used to surface tattoo genres (Punk /
+  Tribal / Royal / Floral / …)
 - Versioned folders (`1.6/Defs`, `1.5/Defs`, ...) — only the active
   version is read, avoiding duplicate defs from historical shims
 - Last-wins per load order, matching the game's runtime semantics
 - Workshop mods recorded with `steamId=0` are still resolved by
   scanning each Workshop folder's `About/About.xml` for its
   `<packageId>`
+- A lazy id→ThingDef index across all `<thing>` entries (not just
+  pawns) backs cross-thing references like connections and bonded
+  animals
 
 Auto-detected Steam install paths (returned values are platform-correct;
 `libraryfolders.vdf` is parsed so non-default library locations like
@@ -120,14 +183,17 @@ Always overridable:
 - **Immediate setting (outdoors/indoors + temperature) not yet
   extracted.** Temperature isn't reliably in the save; outdoor/indoor
   is recoverable from `roofGrid` but not yet implemented.
-- **Apparel descriptions require a RimWorld install.** Without
-  `--rimworld-dir` and without the auto-detect succeeding, the
-  Apparel visual descriptions section falls back to short curated
-  phrases.
-- **Spec-driven filtering by design.** Genes are filtered to visible
-  anatomy + attitude-bearing; hediffs to visible body changes; gear
-  is stripped of quality/HP. If you want raw RimTalk-style output,
-  this isn't that — it's a deliberate cleanup pass for image prompts.
+- **Apparel descriptions need a RimWorld install for best results.**
+  Without `--rimworld-dir` and without the auto-detect succeeding,
+  every field that would have used a mod-aware `description`/`label`
+  falls back to a humanised def slug (e.g. `Apparel_TribalA` →
+  `tribal a`). The block still renders cleanly — it just reads
+  rougher.
+- **Filtering is minimal by design.** Genes/hediffs are partitioned
+  into clusters (chemical, shambler, pilot, drug-high, …) and trivial
+  skips like withdrawals/tolerances are dropped, but otherwise the
+  block surfaces what the save contains and trusts the downstream LLM
+  to do the visual interpretation. See *Data-first principle* above.
 
 ## Tests
 
