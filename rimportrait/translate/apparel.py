@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from ..colors import rgba_to_name
 from ..records import ApparelItem
+from .stuff import describe_stuff
 
 
 APPAREL_VISUAL: dict[str, str] = {
@@ -127,6 +129,42 @@ def describe_apparel(items: Iterable[ApparelItem]) -> list[tuple[str, str]]:
     label = it.label or _humanise(it.def_name)
     out.append((label, describe_apparel_item(it)))
   return out
+
+
+def qualifier_for_apparel(item: ApparelItem) -> str | None:
+  """Comma-joined visual qualifiers: material, color, style.
+
+  Returns None when an item carries no qualifier signal. Used both for
+  the inline gear summary line and the long-form apparel block.
+  """
+  bits: list[str] = []
+  stuff = describe_stuff(item.stuff)
+  if stuff:
+    bits.append(stuff)
+  if item.color is not None:
+    bits.append(rgba_to_name(item.color))
+  style = describe_style_def(item.style_def)
+  if style:
+    bits.append(style)
+  if not bits:
+    return None
+  return ", ".join(bits)
+
+
+def describe_style_def(style_def: str | None) -> str | None:
+  """Render an ideology style variant ('Samurai', 'Rustic', ...) inline.
+
+  RimWorld's styleDef is shaped ``<ThingName>_<StyleName>`` (e.g.
+  ``PrestigeMarineHelmet_Samurai``). We surface just the style suffix
+  as "<Style> style"; if the def has no underscore we treat it as a
+  bare style name.
+  """
+  if not style_def:
+    return None
+  tail = style_def.rsplit("_", 1)[-1]
+  if not tail:
+    return None
+  return f"{tail} style"
 
 
 def _humanise(def_name: str) -> str:

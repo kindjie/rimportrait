@@ -132,6 +132,62 @@ def test_portrait_apparel_section_present():
   assert "flak jacket" in out
 
 
+def test_portrait_surfaces_apparel_stuff_color_and_style():
+  pawn = PawnRecord(
+    pawn_id="100",
+    name_full="Mat Roe",
+    label="Mat",
+    role="colonist",
+    apparel=(
+      ApparelItem(
+        "Apparel_CollarShirt",
+        stuff="Leather_Human",
+        color=RGBA(0.55, 0.40, 0.75, 1.0),  # muted violet
+      ),
+      ApparelItem(
+        "Apparel_ArmorMarineHelmetPrestige",
+        stuff=None,
+        color=RGBA(0.33, 0.33, 0.33, 1.0),  # dark charcoal gray
+        style_def="PrestigeMarineHelmet_Samurai",
+      ),
+    ),
+    equipment=(
+      Weapon(
+        "Gun_AssaultRifle",
+        stuff="Plasteel",
+        color=RGBA(0.40, 0.93, 0.93, 1.0),
+      ),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # Inline gear summary: material, color, style appear in parens.
+  assert "human leather" in out
+  assert "muted violet" in out
+  assert "Samurai style" in out
+  assert "plasteel" in out
+  assert "bright cyan / aqua / turquoise" in out
+  # Long apparel section: qualifier bracketed.
+  assert "[human leather, muted violet]" in out
+  assert (
+    "[dark charcoal gray, Samurai style]" in out
+  )
+
+
+def test_portrait_apparel_qualifier_omitted_when_no_signal():
+  pawn = PawnRecord(
+    pawn_id="101",
+    name_full="No Stuff",
+    label="No Stuff",
+    role="colonist",
+    apparel=(ApparelItem("Apparel_BasicShirt"),),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # No qualifier means no bracketed segment on the bullet line and no
+  # parenthesised qualifier on the inline summary item.
+  assert "- basic shirt: plain practical shirt" in out
+  assert "plain practical shirt (" not in out
+
+
 def test_portrait_omits_missing_fields():
   bare = PawnRecord(
     pawn_id="1",

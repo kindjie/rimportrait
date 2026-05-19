@@ -4,10 +4,14 @@
 - `test_colors.py` — RGBA parsing + descriptive-name table, including
   the exact phrasings from the spec.
 - `test_wealth.py` — wealth-tier boundary behaviour.
+- `test_stuff.py` — material (stuff) def humanisation:
+  Leather_*/Wool*/Blocks* prefixes plus camelcase fallback.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)
-  acts as the canonical end-to-end shape check.
+  acts as the canonical end-to-end shape check. Additional cases
+  cover apparel/weapon stuff+color+style qualifiers and the no-signal
+  fallback (no parens, no brackets).
 - `test_extract_integration.py` — runs against `sample.rws` at the
   repo root when present. Selectors find a representative colonist by
   structural property (e.g. first with gradient hair, first with

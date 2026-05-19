@@ -19,12 +19,16 @@ from .records import (
   PawnRecord,
   Relation,
 )
-from .translate.apparel import describe_apparel, describe_apparel_item
+from .translate.apparel import (
+  describe_apparel,
+  describe_apparel_item,
+  qualifier_for_apparel,
+)
 from .translate.favorite_color import describe_favorite_color
 from .translate.genes import describe_genes
 from .translate.hair import describe_gradient_mask, describe_hair_style
 from .translate.hediffs import describe_hediffs
-from .translate.weapons import describe_weapons
+from .translate.weapons import describe_weapon, qualifier_for_weapon
 from .translate.xenotype import describe_xenotype
 from .wealth import wealth_tier
 
@@ -112,8 +116,13 @@ def _gradient_value(gh: GradientHair | None) -> str | None:
 def _gear_summary(p: PawnRecord) -> str | None:
   parts: list[str] = []
   for it in p.apparel:
-    parts.append(describe_apparel_item(it))
-  parts.extend(describe_weapons(p.equipment))
+    base = describe_apparel_item(it)
+    qual = qualifier_for_apparel(it)
+    parts.append(f"{base} ({qual})" if qual else base)
+  for w in p.equipment:
+    base = describe_weapon(w)
+    qual = qualifier_for_weapon(w)
+    parts.append(f"{base} ({qual})" if qual else base)
   if not parts:
     return None
   return ", ".join(parts)
@@ -252,7 +261,11 @@ def _apparel_section(
     nicer_label = (
       def_labels.get(item.def_name) if def_labels else None
     ) or label
-    out.append(f"- {nicer_label}: {description or summary}")
+    qual = qualifier_for_apparel(item)
+    head = f"- {nicer_label}"
+    if qual:
+      head += f" [{qual}]"
+    out.append(f"{head}: {description or summary}")
   return out
 
 

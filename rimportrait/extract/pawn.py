@@ -136,8 +136,14 @@ def _apparel(el: etree._Element) -> tuple[ApparelItem, ...]:
   out: list[ApparelItem] = []
   for li in el.iterfind("apparel/wornApparel/innerList/li"):
     d = li.findtext("def")
-    if d:
-      out.append(ApparelItem(def_name=d))
+    if not d:
+      continue
+    out.append(ApparelItem(
+      def_name=d,
+      stuff=li.findtext("stuff"),
+      color=RGBA.parse(li.findtext("color")),
+      style_def=li.findtext("styleDef"),
+    ))
   return tuple(out)
 
 
@@ -145,8 +151,14 @@ def _equipment(el: etree._Element) -> tuple[Weapon, ...]:
   out: list[Weapon] = []
   for li in el.iterfind("equipment/equipment/innerList/li"):
     d = li.findtext("def")
-    if d:
-      out.append(Weapon(def_name=d))
+    if not d:
+      continue
+    out.append(Weapon(
+      def_name=d,
+      stuff=li.findtext("stuff"),
+      color=RGBA.parse(li.findtext("color")),
+      style_def=li.findtext("styleDef"),
+    ))
   return tuple(out)
 
 

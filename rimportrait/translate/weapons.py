@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from ..colors import rgba_to_name
 from ..records import Weapon
+from .stuff import describe_stuff
 
 
 WEAPON_VISUAL: dict[str, str] = {
@@ -65,6 +67,19 @@ def describe_weapon(w: Weapon) -> str:
 
 def describe_weapons(weapons: Iterable[Weapon]) -> list[str]:
   return [describe_weapon(w) for w in weapons]
+
+
+def qualifier_for_weapon(w: Weapon) -> str | None:
+  """Comma-joined material/color qualifiers for a weapon, or None."""
+  bits: list[str] = []
+  stuff = describe_stuff(w.stuff)
+  if stuff:
+    bits.append(stuff)
+  if w.color is not None:
+    bits.append(rgba_to_name(w.color))
+  if not bits:
+    return None
+  return ", ".join(bits)
 
 
 def _humanise(def_name: str) -> str:

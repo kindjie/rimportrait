@@ -23,12 +23,18 @@ class GradientHair:
 class ApparelItem:
   def_name: str
   label: str | None = None
+  stuff: str | None = None
+  color: RGBA | None = None
+  style_def: str | None = None
 
 
 @dataclass(frozen=True)
 class Weapon:
   def_name: str
   label: str | None = None
+  stuff: str | None = None
+  color: RGBA | None = None
+  style_def: str | None = None
 
 
 @dataclass(frozen=True)
