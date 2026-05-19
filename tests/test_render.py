@@ -315,6 +315,55 @@ def test_carrying_line_omitted_when_inventory_empty():
   assert "Carrying" not in out
 
 
+def test_condition_label_surfaces_in_apparel_qualifier():
+  pawn = PawnRecord(
+    pawn_id="300",
+    name_full="Worn Out",
+    label="Worn Out",
+    role="colonist",
+    apparel=(
+      # Pristine: omitted from qualifier.
+      ApparelItem("Apparel_CollarShirt", health=95, max_health=100),
+      # 0.6 ratio: "worn".
+      ApparelItem("Apparel_PowerArmor", health=180, max_health=300),
+      # 0.3 ratio: "battered".
+      ApparelItem("Apparel_Cape", health=60, max_health=200),
+      # 0.1 ratio: "ruined".
+      ApparelItem("Apparel_Bandolier", health=10, max_health=100),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  armor_line = [
+    ln for ln in out.splitlines() if ln.startswith("Worn armor/clothing:")
+  ][0]
+  utility_line = [
+    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+  ][0]
+  # Pristine item has no qualifier appended.
+  assert "collar shirt (" not in armor_line
+  # Bandolier is in the utility bucket.
+  assert "worn" in armor_line       # power armor
+  assert "battered" in armor_line   # cape
+  assert "ruined" in utility_line   # bandolier
+
+
+def test_condition_label_surfaces_on_weapon_qualifier():
+  pawn = PawnRecord(
+    pawn_id="301",
+    name_full="Tired Trigger",
+    label="Tired",
+    role="colonist",
+    equipment=(
+      Weapon("Gun_AssaultRifle", health=40, max_health=100),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  weapon_line = [
+    ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
+  ][0]
+  assert "battered" in weapon_line
+
+
 def test_portrait_apparel_qualifier_omitted_when_no_signal():
   pawn = PawnRecord(
     pawn_id="101",

@@ -32,6 +32,11 @@
   (e.g. Empire's Count -> archon) flow through automatically; tests
   assert both the label-provided and no-labels (def-name) paths and
   the semicolon-joined multi-title shape.
+- `test_condition.py` — coarse condition-label mapper for apparel /
+  weapon health vs MaxHitPoints: omit at >= 80%, "worn" at 50-80%,
+  "battered" at 25-50%, "ruined" below 25%. The mapper is integrated
+  into qualifier_for_apparel and qualifier_for_weapon and tested in
+  the render block too.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

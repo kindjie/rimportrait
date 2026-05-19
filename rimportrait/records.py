@@ -26,6 +26,8 @@ class ApparelItem:
   stuff: str | None = None
   color: RGBA | None = None
   style_def: str | None = None
+  health: int | None = None
+  max_health: int | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,8 @@ class Weapon:
   stuff: str | None = None
   color: RGBA | None = None
   style_def: str | None = None
+  health: int | None = None
+  max_health: int | None = None
 
 
 @dataclass(frozen=True)

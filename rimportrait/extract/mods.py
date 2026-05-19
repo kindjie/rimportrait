@@ -339,6 +339,7 @@ class DefRecord:
   description: str | None
   tex_path: str | None
   source: str  # package_id
+  max_health: int | None = None
 
 
 @dataclass
@@ -352,6 +353,7 @@ class _RawDef:
   description: str | None
   tex_path: str | None
   source: str
+  max_health: int | None = None
 
 
 def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
@@ -379,6 +381,13 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
         el.findtext("texPath")
         or el.findtext("graphicData/texPath")
       )
+      max_health_raw = el.findtext("statBases/MaxHitPoints")
+      max_health: int | None = None
+      if max_health_raw:
+        try:
+          max_health = int(float(max_health_raw.strip()))
+        except ValueError:
+          max_health = None
       out.append(_RawDef(
         def_type=el.tag,
         name_attr=name_attr.strip() if name_attr else None,
@@ -389,6 +398,7 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
         description=_strip_tags(description),
         tex_path=tex_path.strip() if tex_path else None,
         source=source,
+        max_health=max_health,
       ))
   return out
 
@@ -414,6 +424,23 @@ def _resolve_inheritance(raws: list[_RawDef]) -> list[DefRecord]:
       return None
     return inherit(parent, attr, seen)
 
+  def inherit_int(
+    r: _RawDef, attr: str, seen: set[str] | None = None
+  ) -> int | None:
+    val = getattr(r, attr)
+    if val is not None:
+      return val
+    if r.parent_name is None:
+      return None
+    seen = seen or set()
+    if r.parent_name in seen:
+      return None
+    seen.add(r.parent_name)
+    parent = by_name.get(r.parent_name)
+    if parent is None:
+      return None
+    return inherit_int(parent, attr, seen)
+
   out: list[DefRecord] = []
   for r in raws:
     if r.abstract or not r.def_name:
@@ -425,6 +452,7 @@ def _resolve_inheritance(raws: list[_RawDef]) -> list[DefRecord]:
       description=inherit(r, "description"),
       tex_path=inherit(r, "tex_path"),
       source=r.source,
+      max_health=inherit_int(r, "max_health"),
     ))
   return out
 

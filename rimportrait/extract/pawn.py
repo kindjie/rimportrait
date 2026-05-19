@@ -137,7 +137,28 @@ def _hediffs(el: etree._Element) -> tuple[Hediff, ...]:
   return tuple(out)
 
 
-def _apparel(el: etree._Element) -> tuple[ApparelItem, ...]:
+def _int_or_none(raw: str | None) -> int | None:
+  if not raw:
+    return None
+  try:
+    return int(float(raw))
+  except ValueError:
+    return None
+
+
+def _max_health(
+  def_name: str, def_index: dict[str, object] | None
+) -> int | None:
+  if not def_index:
+    return None
+  rec = def_index.get(def_name)
+  return getattr(rec, "max_health", None) if rec is not None else None
+
+
+def _apparel(
+  el: etree._Element,
+  def_index: dict[str, object] | None = None,
+) -> tuple[ApparelItem, ...]:
   out: list[ApparelItem] = []
   for li in el.iterfind("apparel/wornApparel/innerList/li"):
     d = li.findtext("def")
@@ -148,11 +169,16 @@ def _apparel(el: etree._Element) -> tuple[ApparelItem, ...]:
       stuff=li.findtext("stuff"),
       color=RGBA.parse(li.findtext("color")),
       style_def=li.findtext("styleDef"),
+      health=_int_or_none(li.findtext("health")),
+      max_health=_max_health(d, def_index),
     ))
   return tuple(out)
 
 
-def _equipment(el: etree._Element) -> tuple[Weapon, ...]:
+def _equipment(
+  el: etree._Element,
+  def_index: dict[str, object] | None = None,
+) -> tuple[Weapon, ...]:
   out: list[Weapon] = []
   for li in el.iterfind("equipment/equipment/innerList/li"):
     d = li.findtext("def")
@@ -163,6 +189,8 @@ def _equipment(el: etree._Element) -> tuple[Weapon, ...]:
       stuff=li.findtext("stuff"),
       color=RGBA.parse(li.findtext("color")),
       style_def=li.findtext("styleDef"),
+      health=_int_or_none(li.findtext("health")),
+      max_health=_max_health(d, def_index),
     ))
   return tuple(out)
 
@@ -484,8 +512,8 @@ def pawn_from_element(
     gradient_hair=_gradient_hair(el),
     genes=_genes(el),
     hediffs=_hediffs(el),
-    apparel=_apparel(el),
-    equipment=_equipment(el),
+    apparel=_apparel(el, def_index),
+    equipment=_equipment(el, def_index),
     inventory=_inventory(el),
     ideo=_ideo(el, save),
     relations=_relations(el),

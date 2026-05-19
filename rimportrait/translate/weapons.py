@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from ..colors import rgba_to_name
 from ..records import Weapon
 from ._common import label_for
+from .condition import describe_condition
 from .stuff import describe_stuff
 
 
@@ -38,13 +39,16 @@ def describe_weapons(
 
 
 def qualifier_for_weapon(w: Weapon) -> str | None:
-  """Comma-joined material/color qualifiers for a weapon, or None."""
+  """Comma-joined material/color/condition qualifiers for a weapon."""
   bits: list[str] = []
   stuff = describe_stuff(w.stuff)
   if stuff:
     bits.append(stuff)
   if w.color is not None:
     bits.append(rgba_to_name(w.color))
+  condition = describe_condition(w.health, w.max_health)
+  if condition:
+    bits.append(condition)
   if not bits:
     return None
   return ", ".join(bits)

@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from ..colors import rgba_to_name
 from ..records import ApparelItem
 from ._common import description_for, humanise, label_for
+from .condition import describe_condition
 from .stuff import describe_stuff
 
 
@@ -71,7 +72,7 @@ def long_form_apparel_phrase(
 
 
 def qualifier_for_apparel(item: ApparelItem) -> str | None:
-  """Comma-joined visual qualifiers: material, color, style.
+  """Comma-joined visual qualifiers: material, color, style, condition.
 
   Returns None when an item carries no qualifier signal. Used both for
   the inline gear summary line and the long-form apparel block.
@@ -85,6 +86,9 @@ def qualifier_for_apparel(item: ApparelItem) -> str | None:
   style = describe_style_def(item.style_def)
   if style:
     bits.append(style)
+  condition = describe_condition(item.health, item.max_health)
+  if condition:
+    bits.append(condition)
   if not bits:
     return None
   return ", ".join(bits)
