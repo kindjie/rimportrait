@@ -24,6 +24,7 @@ from .records import (
 from .translate.apparel import (
   describe_apparel,
   describe_apparel_item,
+  is_baby_carrier,
   is_utility_apparel,
   long_form_apparel_phrase,
   qualifier_for_apparel,
@@ -120,10 +121,20 @@ def _gradient_value(gh: GradientHair | None) -> str | None:
 
 
 def _apparel_phrase(
-  it: ApparelItem, labels: dict[str, str] | None = None
+  it: ApparelItem,
+  labels: dict[str, str] | None = None,
+  carrying_infant: bool = False,
 ) -> str:
+  """Render one apparel item's inline phrase.
+
+  Baby carriers gain an "empty" marker when no infant is being held,
+  so the LLM doesn't draw a baby into an unused carrier (or miss the
+  carrier signal entirely when one is present).
+  """
   base = describe_apparel_item(it, labels)
   qual = qualifier_for_apparel(it)
+  if is_baby_carrier(it.def_name) and not carrying_infant:
+    qual = f"{qual}, empty" if qual else "empty"
   return f"{base} ({qual})" if qual else base
 
 
@@ -148,9 +159,10 @@ def _gear_lines(
   """
   armor: list[str] = []
   utility: list[str] = []
+  carrying = p.carried_infant is not None
   for it in p.apparel:
     target = utility if is_utility_apparel(it.def_name) else armor
-    target.append(_apparel_phrase(it, labels))
+    target.append(_apparel_phrase(it, labels, carrying_infant=carrying))
   weapons = [_weapon_phrase(w, labels) for w in p.equipment]
   out: list[tuple[str, str]] = []
   if armor:
@@ -169,6 +181,17 @@ def _carrying_summary(
   if not items:
     return None
   return ", ".join(items)
+
+
+def _carrying_infant(p: PawnRecord) -> str | None:
+  ci = p.carried_infant
+  if ci is None:
+    return None
+  if ci.name and ci.bio_age is not None:
+    return f"{ci.name} (infant, age {ci.bio_age:.1f})"
+  if ci.name:
+    return f"{ci.name} (infant)"
+  return f"{ci.pawn_id} (infant)"
 
 
 def _royal_title_line(
@@ -401,6 +424,7 @@ def render_portrait(
           ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
     *(_line(label, value)
       for label, value in _gear_lines(p, def_labels)),
+    _line("Carrying infant in arms", _carrying_infant(p)),
     _line("Carrying (pack/inventory)",
           _carrying_summary(p, def_labels)),
   ):
@@ -450,6 +474,7 @@ def _person_block(
           ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
     *(_line(label, value)
       for label, value in _gear_lines(p, def_labels)),
+    _line("Carrying infant in arms", _carrying_infant(p)),
     _line("Carrying (pack/inventory)",
           _carrying_summary(p, def_labels)),
   ):

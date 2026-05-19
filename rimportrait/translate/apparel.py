@@ -36,6 +36,15 @@ def is_utility_apparel(def_name: str) -> bool:
   return any(p in def_name for p in _UTILITY_PATTERNS)
 
 
+def is_baby_carrier(def_name: str) -> bool:
+  """Match vanilla Apparel_BabyCarrier and modded variants (SBC_*).
+
+  Substring match on ``BabyCarrier`` is intentionally broad so any
+  mod that follows the naming convention is caught automatically.
+  """
+  return "BabyCarrier" in def_name
+
+
 def describe_apparel_item(
   item: ApparelItem,
   labels: dict[str, str] | None = None,

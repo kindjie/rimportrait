@@ -3,6 +3,7 @@ from __future__ import annotations
 from rimportrait.colors import RGBA
 from rimportrait.records import (
   ApparelItem,
+  CarriedInfant,
   Gene,
   GradientHair,
   Hediff,
@@ -313,6 +314,73 @@ def test_carrying_line_omitted_when_inventory_empty():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   assert "Carrying" not in out
+
+
+def test_baby_carrier_marked_empty_when_no_infant():
+  pawn = PawnRecord(
+    pawn_id="400",
+    name_full="Empty Cradle",
+    label="Empty",
+    role="colonist",
+    apparel=(
+      ApparelItem("Apparel_BabyCarrier", stuff="WoolAlpaca"),
+      ApparelItem("SBC_BabyCarrier"),  # modded variant
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  utility_line = [
+    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+  ][0]
+  assert "(alpaca wool, empty)" in utility_line  # vanilla carrier
+  assert "sbc baby carrier (empty)" in utility_line  # modded carrier
+  assert "Carrying infant in arms:" not in out
+
+
+def test_baby_carrier_not_marked_empty_when_carrying_infant():
+  pawn = PawnRecord(
+    pawn_id="401",
+    name_full="With Baby",
+    label="With Baby",
+    role="colonist",
+    apparel=(
+      ApparelItem("Apparel_BabyCarrier", stuff="WoolAlpaca"),
+    ),
+    carried_infant=CarriedInfant(
+      pawn_id="Human123", name="Tot", bio_age=0.4,
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  utility_line = [
+    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+  ][0]
+  # Carrier is occupied -> no "empty" marker. Material qualifier
+  # still appears alone.
+  assert "(alpaca wool)" in utility_line
+  assert "empty" not in utility_line
+  assert "Carrying infant in arms: Tot (infant, age 0.4)" in out
+
+
+def test_carrying_infant_line_omitted_when_none():
+  pawn = PawnRecord(
+    pawn_id="402",
+    name_full="Solo",
+    label="Solo",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Carrying infant in arms:" not in out
+
+
+def test_carrying_infant_falls_back_to_pawn_id_when_unresolved():
+  pawn = PawnRecord(
+    pawn_id="403",
+    name_full="Unknown Carry",
+    label="Unknown Carry",
+    role="colonist",
+    carried_infant=CarriedInfant(pawn_id="Human999"),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Carrying infant in arms: Human999 (infant)" in out
 
 
 def test_condition_label_surfaces_in_apparel_qualifier():

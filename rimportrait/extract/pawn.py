@@ -10,6 +10,7 @@ from lxml import etree
 from ..colors import RGBA
 from ..records import (
   ApparelItem,
+  CarriedInfant,
   Gene,
   GradientHair,
   Hediff,
@@ -222,6 +223,31 @@ def _relations(el: etree._Element) -> tuple[Relation, ...]:
     if d and other and other.lower() != "null":
       out.append(Relation(def_name=d, other_pawn_id=other))
   return tuple(out)
+
+
+def _carried_infant(
+  el: etree._Element, save: Save
+) -> CarriedInfant | None:
+  """Resolve the <carriedBaby> ref to the carried pawn's name + age.
+
+  Biotech serialises the held infant as a Thing reference like
+  ``Thing_Human12345``. We strip the prefix and look up the actual
+  pawn so we can surface their label and age.
+  """
+  ref = el.findtext("carriedBaby")
+  if not ref or ref.strip().lower() == "null":
+    return None
+  pid = _strip(ref.strip())
+  baby_el = save.pawns_by_id.get(pid)
+  if baby_el is None:
+    return CarriedInfant(pawn_id=pid)
+  full, nick, label = _name(baby_el)
+  bio, _chrono = _age(baby_el)
+  return CarriedInfant(
+    pawn_id=pid,
+    name=label or nick or full,
+    bio_age=bio,
+  )
 
 
 def _royal_titles(
@@ -518,6 +544,7 @@ def pawn_from_element(
     ideo=_ideo(el, save),
     relations=_relations(el),
     royal_titles=_royal_titles(el, save),
+    carried_infant=_carried_infant(el, save),
   )
 
 

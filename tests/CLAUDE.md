@@ -37,6 +37,11 @@
   "battered" at 25-50%, "ruined" below 25%. The mapper is integrated
   into qualifier_for_apparel and qualifier_for_weapon and tested in
   the render block too.
+- Carried-infant coherence covered in test_render.py: baby carriers
+  (vanilla `Apparel_BabyCarrier` + any modded `*BabyCarrier`) gain
+  an `empty` qualifier when carriedBaby is null, and a "Carrying
+  infant in arms" line appears when an infant ref resolves. Falls
+  back to the bare pawn id if the carried pawn can't be resolved.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

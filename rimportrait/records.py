@@ -77,6 +77,13 @@ class RoyalTitle:
 
 
 @dataclass(frozen=True)
+class CarriedInfant:
+  pawn_id: str
+  name: str | None = None
+  bio_age: float | None = None
+
+
+@dataclass(frozen=True)
 class IdeoRecord:
   name: str
   color: RGBA | None = None
@@ -138,3 +145,4 @@ class PawnRecord:
   ideo: IdeoRecord | None = None
   relations: tuple[Relation, ...] = ()
   royal_titles: tuple[RoyalTitle, ...] = ()
+  carried_infant: CarriedInfant | None = None
