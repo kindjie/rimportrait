@@ -41,6 +41,17 @@ def _is_ignored(def_name: str) -> bool:
   return any(p in def_name for p in _IGNORED_PATTERNS)
 
 
+def is_shambler_state(def_name: str) -> bool:
+  """Detect the Anomaly Shambler reanimation hediff family.
+
+  Matches the vanilla ``Shambler`` def and the closely-related
+  ``ShamblerCorpse`` plus any modded variant with the substring,
+  so re-animated/mutated states are promoted to a dedicated line
+  rather than blending with permanent body changes.
+  """
+  return "Shambler" in def_name
+
+
 def is_drug_high(def_name: str) -> bool:
   """Detect drug-induced expression states.
 
@@ -75,6 +86,8 @@ def describe_hediffs(
       continue
     if is_drug_high(h.def_name):
       continue
+    if is_shambler_state(h.def_name):
+      continue
     out.append(_format(h, labels))
   return out
 
@@ -89,6 +102,21 @@ def describe_chemical_state(
     if _is_ignored(h.def_name):
       continue
     if not is_drug_high(h.def_name):
+      continue
+    out.append(_format(h, labels))
+  return out
+
+
+def describe_shambler_state(
+  hediffs: Iterable[Hediff],
+  labels: dict[str, str] | None = None,
+) -> list[str]:
+  """Return only shambler-state hediffs (reanimated / corpse-shambler)."""
+  out: list[str] = []
+  for h in hediffs:
+    if _is_ignored(h.def_name):
+      continue
+    if not is_shambler_state(h.def_name):
       continue
     out.append(_format(h, labels))
   return out

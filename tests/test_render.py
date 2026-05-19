@@ -448,6 +448,39 @@ def test_commanded_mechs_omitted_when_pawn_commands_none():
   assert "Commanded mechs:" not in out
 
 
+def test_shambler_state_line_promoted_above_body_changes():
+  pawn = PawnRecord(
+    pawn_id="900",
+    name_full="Rean Imated",
+    label="Rean",
+    role="colonist",
+    hediffs=(
+      Hediff("Shambler"),
+      Hediff("ArchotechEye", body_part="left eye"),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Shambler state: shambler" in out
+  body_line = [
+    ln for ln in out.splitlines()
+    if ln.startswith("Visible implants/injuries/body changes:")
+  ][0]
+  assert "shambler" not in body_line
+  assert "archotech eye" in body_line
+
+
+def test_shambler_state_line_omitted_when_not_shambling():
+  pawn = PawnRecord(
+    pawn_id="901",
+    name_full="Plain",
+    label="Plain",
+    role="colonist",
+    hediffs=(Hediff("ArchotechEye"),),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Shambler state:" not in out
+
+
 def test_chemical_state_line_renders_drug_highs_only():
   pawn = PawnRecord(
     pawn_id="600",

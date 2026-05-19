@@ -4,7 +4,9 @@ from rimportrait.records import Hediff
 from rimportrait.translate.hediffs import (
   describe_chemical_state,
   describe_hediffs,
+  describe_shambler_state,
   is_drug_high,
+  is_shambler_state,
 )
 
 
@@ -59,3 +61,35 @@ def test_describe_chemical_state_threads_labels():
     labels={"YayoHigh": "high on yayo"},
   )
   assert out == ["high on yayo"]
+
+
+def test_is_shambler_state_recognises_vanilla_and_corpse():
+  assert is_shambler_state("Shambler")
+  assert is_shambler_state("ShamblerCorpse")
+  assert not is_shambler_state("ArchotechEye")
+  assert not is_shambler_state("BionicArm")
+
+
+def test_describe_shambler_state_returns_shambler_only():
+  out = describe_shambler_state((
+    Hediff("Shambler"),
+    Hediff("ArchotechEye", body_part="left eye"),
+    Hediff("YayoHigh"),
+  ))
+  assert out == ["shambler"]
+
+
+def test_describe_hediffs_excludes_shambler_state():
+  out = describe_hediffs((
+    Hediff("Shambler"),
+    Hediff("ArchotechEye", body_part="left eye"),
+  ))
+  assert out == ["archotech eye (left eye)"]
+
+
+def test_describe_shambler_state_threads_labels():
+  out = describe_shambler_state(
+    (Hediff("Shambler"),),
+    labels={"Shambler": "reanimated shambler"},
+  )
+  assert out == ["reanimated shambler"]

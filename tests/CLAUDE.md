@@ -64,6 +64,11 @@
   only fires for actual psycasters; rendered as a band label plus
   percentage (full / high / moderate / low / depleted at 0.95 /
   0.75 / 0.50 / 0.25 thresholds).
+- `test_chemical_state.py` also covers the Shambler partition:
+  `is_shambler_state` + `describe_shambler_state` extract the
+  Anomaly Shambler reanimation hediff family so they appear on a
+  dedicated "Shambler state" line near Chemical/drug state rather
+  than mixing with permanent body changes.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)
