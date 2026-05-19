@@ -145,6 +145,22 @@ def _build_parser() -> argparse.ArgumentParser:
       "(google) or gpt-4o-mini (openai)."
     ),
   )
+  p.add_argument(
+    "--image", action="store_true",
+    help=(
+      "Also generate an image from the prompt. Requires --generate "
+      "and --out-dir. The image lands next to the .txt prompt."
+    ),
+  )
+  p.add_argument(
+    "--image-model", default=None,
+    help=(
+      "Image model name. Defaults to gemini-3.1-flash-image-preview "
+      "(google, 'Nano Banana 2') or gpt-image-2 (openai). Use "
+      "--image-model gemini-3-pro-image-preview for Google's "
+      "Nano Banana Pro."
+    ),
+  )
   return p
 
 
@@ -247,6 +263,21 @@ def _maybe_generate(
   )
 
 
+def _maybe_image(
+  args: argparse.Namespace, prompt: str, pawn: PawnRecord, kind: str
+) -> None:
+  if not args.image:
+    return
+  png, ext = llm.generate_image(
+    args.provider, prompt, kind, model=args.image_model
+  )
+  out_dir = args.out_dir
+  assert out_dir is not None  # validated in main
+  out_dir.mkdir(parents=True, exist_ok=True)
+  fname = f"{_slug(pawn.label or pawn.name_full)}.{kind}.{ext}"
+  (out_dir / fname).write_bytes(png)
+
+
 def main(argv: list[str] | None = None) -> int:
   args = _build_parser().parse_args(argv)
   if args.generate and args.no_instruction:
@@ -254,6 +285,12 @@ def main(argv: list[str] | None = None) -> int:
       "error: --no-instruction is incompatible with --generate",
       file=sys.stderr,
     )
+    return 2
+  if args.image and not args.generate:
+    print("error: --image requires --generate", file=sys.stderr)
+    return 2
+  if args.image and args.out_dir is None:
+    print("error: --image requires --out-dir", file=sys.stderr)
     return 2
   if not args.save.exists():
     print(f"error: save not found: {args.save}", file=sys.stderr)
@@ -281,8 +318,9 @@ def main(argv: list[str] | None = None) -> int:
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
       )
-      _emit(args.out_dir, _maybe_generate(args, block, "family"),
-            focus, "family")
+      text = _maybe_generate(args, block, "family")
+      _emit(args.out_dir, text, focus, "family")
+      _maybe_image(args, text, focus, "family")
       return 0
 
     if args.pawn:
@@ -296,8 +334,9 @@ def main(argv: list[str] | None = None) -> int:
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
       )
-      _emit(args.out_dir, _maybe_generate(args, block, "portrait"),
-            p, "portrait")
+      text = _maybe_generate(args, block, "portrait")
+      _emit(args.out_dir, text, p, "portrait")
+      _maybe_image(args, text, p, "portrait")
       return 0
 
     for p in _gather_default(
@@ -310,8 +349,9 @@ def main(argv: list[str] | None = None) -> int:
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
       )
-      _emit(args.out_dir, _maybe_generate(args, block, "portrait"),
-            p, "portrait")
+      text = _maybe_generate(args, block, "portrait")
+      _emit(args.out_dir, text, p, "portrait")
+      _maybe_image(args, text, p, "portrait")
     return 0
   except Exception as e:
     print(f"error: {e}", file=sys.stderr)

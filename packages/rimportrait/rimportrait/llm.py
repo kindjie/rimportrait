@@ -1,11 +1,15 @@
-"""Pipe a rendered portrait block through an LLM to get an image prompt.
+"""Pipe a rendered portrait block through an LLM to get an image
+prompt, and optionally feed that prompt to an image-generation model.
 
-Two providers, both with lazy SDK imports so callers who never pass
-``--generate`` don't pay the import cost. API keys are read from the
-provider's standard env var at call time (no constructor args).
+Two providers (google, openai), both with lazy SDK imports so callers
+who never pass ``--generate`` / ``--image`` don't pay the import cost.
+API keys are read from the provider's standard env var at call time
+(no constructor args).
 """
 
 from __future__ import annotations
+
+import base64
 
 
 DEFAULT_MODELS: dict[str, str] = {
@@ -13,7 +17,21 @@ DEFAULT_MODELS: dict[str, str] = {
   "openai": "gpt-4o-mini",
 }
 
+DEFAULT_IMAGE_MODELS: dict[str, str] = {
+  "google": "gemini-3.1-flash-image-preview",  # Nano Banana 2
+  "openai": "gpt-image-2",
+}
+
 PROVIDERS = tuple(DEFAULT_MODELS.keys())
+
+_KIND_OPENAI_SIZE = {
+  "portrait": "1024x1536",
+  "family": "1536x1024",
+}
+_KIND_GOOGLE_ASPECT = {
+  "portrait": "3:4",
+  "family": "4:3",
+}
 
 
 def openai_complete(system: str, user: str, model: str) -> str:
@@ -74,3 +92,105 @@ def complete(
     )
   resolved_model = model or DEFAULT_MODELS[provider]
   return _DISPATCH[provider](system, user, resolved_model)
+
+
+# --- image generation ----------------------------------------------
+
+
+def openai_image(prompt: str, model: str, *, size: str) -> tuple[bytes, str]:
+  try:
+    from openai import OpenAI  # type: ignore[import-not-found]
+  except ImportError as e:
+    raise RuntimeError(
+      "openai package not installed; "
+      "pip install 'rimportrait[openai]'"
+    ) from e
+  client = OpenAI()
+  resp = client.images.generate(model=model, prompt=prompt, size=size)
+  data = resp.data
+  if not data or not data[0].b64_json:
+    raise RuntimeError("openai images returned no content")
+  return base64.b64decode(data[0].b64_json), "png"
+
+
+def google_image(
+  prompt: str, model: str, *, aspect_ratio: str
+) -> tuple[bytes, str]:
+  try:
+    from google import genai  # type: ignore[import-not-found]
+    from google.genai import types  # type: ignore[import-not-found]
+  except ImportError as e:
+    raise RuntimeError(
+      "google-genai package not installed; "
+      "pip install 'rimportrait[google]'"
+    ) from e
+
+  def _config(with_aspect: bool):
+    kwargs: dict = {"response_modalities": ["IMAGE"]}
+    if with_aspect and hasattr(types, "ImageConfig"):
+      try:
+        kwargs["image_config"] = types.ImageConfig(
+          aspect_ratio=aspect_ratio
+        )
+      except Exception:
+        pass
+    return types.GenerateContentConfig(**kwargs)
+
+  client = genai.Client()
+  try:
+    resp = client.models.generate_content(
+      model=model, contents=[prompt], config=_config(True)
+    )
+  except Exception as e:
+    msg = str(e).lower()
+    if "image_config" in msg or "aspect" in msg:
+      resp = client.models.generate_content(
+        model=model, contents=[prompt], config=_config(False)
+      )
+    else:
+      raise
+  if not resp.candidates:
+    raise RuntimeError("google-genai returned no candidates")
+  parts = resp.candidates[0].content.parts or []
+  for part in parts:
+    inline = getattr(part, "inline_data", None)
+    if inline and getattr(inline, "mime_type", "").startswith("image/"):
+      ext = inline.mime_type.split("/")[-1] or "png"
+      return inline.data, ext
+  raise RuntimeError("google-genai returned no image part")
+
+
+_IMAGE_DISPATCH = {
+  "openai": openai_image,
+  "google": google_image,
+}
+
+
+def generate_image(
+  provider: str,
+  prompt: str,
+  kind: str,
+  model: str | None = None,
+) -> tuple[bytes, str]:
+  """Return ``(image_bytes, extension)`` for the prompt.
+
+  ``kind`` picks portrait/landscape framing per the rimportrait
+  render kind. ``extension`` is the suggested file extension (no dot)
+  derived from the response mime type.
+  """
+  if provider not in _IMAGE_DISPATCH:
+    raise ValueError(
+      f"unknown provider {provider!r}; expected one of {PROVIDERS}"
+    )
+  if kind not in _KIND_OPENAI_SIZE:
+    raise ValueError(
+      f"unknown kind {kind!r}; expected 'portrait' or 'family'"
+    )
+  resolved_model = model or DEFAULT_IMAGE_MODELS[provider]
+  if provider == "openai":
+    return openai_image(
+      prompt, resolved_model, size=_KIND_OPENAI_SIZE[kind]
+    )
+  return google_image(
+    prompt, resolved_model, aspect_ratio=_KIND_GOOGLE_ASPECT[kind]
+  )

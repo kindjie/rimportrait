@@ -22,6 +22,10 @@ Render-layer and translate-module tests. Save-extraction tests live in
   shape. Real provider SDK calls are monkeypatched so the suite stays
   offline-safe and doesn't require either optional dep to be
   installed.
+- `test_image.py` — `--image` dispatch + per-kind size/aspect routing
+  (portrait → 1024×1536 / 3:4, family → 1536×1024 / 4:3) +
+  missing-SDK error shape. Real provider SDK calls are monkeypatched
+  so the suite stays offline-safe.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture acts as the
   canonical end-to-end shape check. Additional cases cover

@@ -56,6 +56,17 @@ uv run rimportrait sample.rws --pawn NAME --generate
 # OpenAI alternative
 export OPENAI_API_KEY=...
 uv run rimportrait sample.rws --pawn NAME --generate --provider openai
+
+# Generate the image too, in one shot
+uv run rimportrait sample.rws --pawn NAME \
+  --generate --image --out-dir out/
+# writes out/NAME.portrait.txt  (the LLM-generated prompt)
+# writes out/NAME.portrait.jpeg (Google) or .png (OpenAI)
+
+# Use Google's Nano Banana Pro instead of the default Nano Banana 2
+uv run rimportrait sample.rws --pawn NAME \
+  --generate --image --image-model gemini-3-pro-image-preview \
+  --out-dir out/
 ```
 
 Output is a `[PORTRAIT SUBJECT]` or `[FAMILY PORTRAIT SUBJECT]` block
@@ -67,12 +78,21 @@ alias that follows Google's current Flash release; the OpenAI default
 (`gpt-4o-mini`) is a version-pinned snapshot. Override either with
 `--model NAME`.
 
-The LLM dependencies are optional extras:
+The LLM dependencies are optional extras (the same SDKs cover both
+the text step and the image step):
 ```sh
 uv pip install -e 'packages/rimportrait[google]'   # google-genai SDK
 uv pip install -e 'packages/rimportrait[openai]'   # openai SDK
 uv pip install -e 'packages/rimportrait[llm]'      # both
 ```
+
+Image-model defaults: **`gemini-3.1-flash-image-preview`** ("Nano
+Banana 2") for Google and **`gpt-image-2`** for OpenAI. Override
+either with `--image-model NAME`. The image step requires
+`--generate` and `--out-dir` — binary doesn't go to stdout, and the
+LLM-polished paragraph is what the image models are tuned for.
+Portrait renders use a 3:4 frame (1024×1536 OpenAI / 3:4 Google);
+family renders use a 4:3 frame so groups fit.
 
 ## Library use (rimsave)
 
