@@ -7,8 +7,10 @@ from collections.abc import Iterator
 
 from lxml import etree
 
-from ..colors import RGBA
-from ..records import (
+from .colordef import apparel_variant, lookup_color_def
+from .colors import RGBA
+from .load import Save, resolve_ideo_ref
+from .records import (
   ApparelItem,
   BondedAnimal,
   CarriedInfant,
@@ -24,8 +26,6 @@ from ..records import (
   RoyalTitle,
   Weapon,
 )
-from ..translate.colordef import apparel_variant, lookup_color_def
-from .load import Save, resolve_ideo_ref
 
 
 TICKS_PER_YEAR = 3_600_000

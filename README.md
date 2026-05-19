@@ -9,19 +9,27 @@ portraits without knowing the game.
 Replaces an in-game RimTalk + Scriban templating workflow with an
 out-of-game Python script.
 
+## Repo layout
+
+This is a uv workspace with two packages:
+
+- **`packages/rimsave/`** — pure save-parsing library. Reads `.rws`
+  XML and a mod set, returns typed records (`PawnRecord`,
+  `IdeoRecord`, `MapContext`, …). No image-prompt opinion.
+- **`packages/rimportrait/`** — image-prompt renderer. Depends on
+  `rimsave`; turns its records into `[PORTRAIT SUBJECT]` blocks. Owns
+  the `rimportrait` CLI.
+
+API contracts are not stable until v1.0.0 — record shapes and exports
+can change in minor versions.
+
 ## Install
 
 Requires Python 3.11+. Uses `uv` for environment management.
 
 ```sh
-uv run --with lxml python -m rimportrait.cli SAVE.rws --pawn NAME
-```
-
-Or install editable:
-
-```sh
-uv pip install -e .
-rimportrait SAVE.rws --pawn NAME
+uv sync           # installs both packages editable into the workspace venv
+uv run rimportrait SAVE.rws --pawn NAME
 ```
 
 ## Usage
@@ -198,11 +206,13 @@ Always overridable:
 ## Tests
 
 ```sh
-uv run --with lxml --with pytest pytest
+uv run pytest
 ```
 
-Integration tests look for `sample.rws` at the repo root and skip
-cleanly when absent.
+Pytest is configured to discover tests from both packages
+(`packages/rimsave/tests` + `packages/rimportrait/tests`). Integration
+tests look for `sample.rws` at the repo root and skip cleanly when
+absent.
 
 ## License
 

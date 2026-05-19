@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rimportrait.records import Gene
+from rimsave.records import Gene
 from rimportrait.translate.xenotype import describe_xenotype
 
 

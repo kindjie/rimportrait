@@ -13,7 +13,7 @@ caller emits the `<primaryFactionColor>` if available.
 
 from __future__ import annotations
 
-from ..colors import RGBA
+from .colors import RGBA
 
 
 COLOR_DEF_RGBA: dict[str, RGBA] = {

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rimportrait.colors import RGBA, describe_rgba, rgba_to_name
+from rimsave.colors import RGBA, describe_rgba, rgba_to_name
 
 
 def test_parse_rgba_four_channel():

@@ -1,0 +1,44 @@
+# rimportrait tests
+
+Render-layer and translate-module tests. Save-extraction tests live in
+`packages/rimsave/tests/`.
+
+## Files
+- `test_stuff.py` — material (stuff) def humanisation:
+  Leather_*/Wool*/Blocks* prefixes plus camelcase fallback.
+- `test_inventory.py` — inventory item phrasing: humanise fallback,
+  stuff qualifier, stackCount prefix.
+- `test_condition.py` — coarse condition-label mapper for apparel /
+  weapon health vs MaxHitPoints: omit at >= 80%, "worn" at 50-80%,
+  "battered" at 25-50%, "ruined" below 25%. Integrated into
+  qualifier_for_apparel and qualifier_for_weapon.
+- `test_xenotype.py` — xenotype fallback chain: description -> label
+  -> xenogene list -> humanised slug. Endogenes are excluded from the
+  gene-list fallback so only the xenotype's defining genes appear.
+- `test_chemical_state.py` — drug-high, Shambler, and Odyssey pilot
+  hediff partitioning. Each `is_X` / `describe_X` pair pulls its
+  cluster out of `describe_hediffs` so body-changes line stays clean.
+- `test_render.py` — render layer over hand-built `PawnRecord` /
+  `MapContext` fixtures. The `_sample_pawn` fixture acts as the
+  canonical end-to-end shape check. Additional cases cover
+  apparel/weapon stuff+color+style qualifiers, no-signal fallback,
+  three-bucket gear prominence (Worn armor/clothing, Utility
+  belts/gear, Wielded weapon), carried-infant + empty baby carrier,
+  royal title faction overrides, inspiration, mechanitor entourage,
+  abilities + psyfocus, creepjoiner state, connections, bonded
+  animals, physical state, tattoo `label (Category style)`, and
+  ideology style aesthetic + memes.
+
+## Data-first principle
+Curated visual translation tables are retired across all translate
+modules (apparel, weapons, inventory, genes, hediffs, xenotype,
+favorite color, hair). Every translate function accepts an optional
+`labels` / `descriptions` dict (sourced from the mod-aware def index)
+and falls back through `mod description -> mod label -> humanised
+slug`. Tests assert both the no-labels (humanised) and labels-provided
+paths where relevant.
+
+## Running
+```
+uv run pytest packages/rimportrait/tests
+```

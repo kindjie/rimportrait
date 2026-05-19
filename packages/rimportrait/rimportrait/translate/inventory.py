@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..records import InventoryItem
+from rimsave.records import InventoryItem
 from ._common import label_for
 from .stuff import describe_stuff
 

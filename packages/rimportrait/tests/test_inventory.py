@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rimportrait.records import InventoryItem
+from rimsave.records import InventoryItem
 from rimportrait.translate.inventory import (
   describe_inventory,
   describe_inventory_item,

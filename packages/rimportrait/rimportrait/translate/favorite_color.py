@@ -10,9 +10,9 @@ humanised slug.
 
 from __future__ import annotations
 
-from ..colors import rgba_to_name
+from rimsave.colors import rgba_to_name
 from ._common import humanise
-from .colordef import lookup_color_def
+from rimsave.colordef import lookup_color_def
 
 
 def describe_favorite_color(name: str | None) -> str | None:

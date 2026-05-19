@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rimportrait.extract.body_parts import parse_body_part_index
+from rimsave.body_parts import parse_body_part_index
 
 
 SYNTHETIC_BODY = """\

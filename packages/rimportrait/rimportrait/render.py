@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .colors import describe_rgba
-from .records import (
+from rimsave.colors import describe_rgba
+from rimsave.records import (
   ApparelItem,
   BondedAnimal,
   CreepJoinerState,
@@ -23,6 +23,7 @@ from .records import (
   RoyalTitle,
   Weapon,
 )
+from rimsave.wealth import wealth_tier
 from .translate.apparel import (
   describe_apparel,
   describe_apparel_item,
@@ -44,7 +45,6 @@ from .translate.hediffs import (
 from .translate.inventory import describe_inventory
 from .translate.weapons import describe_weapon, qualifier_for_weapon
 from .translate.xenotype import describe_xenotype
-from .wealth import wealth_tier
 
 
 SINGLE_PROMPT_INSTRUCTION = (

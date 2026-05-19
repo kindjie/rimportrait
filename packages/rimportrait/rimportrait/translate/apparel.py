@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..colors import rgba_to_name
-from ..records import ApparelItem
+from rimsave.colors import rgba_to_name
+from rimsave.records import ApparelItem
 from ._common import description_for, humanise, label_for
 from .condition import describe_condition
 from .stuff import describe_stuff

@@ -15,17 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from rimportrait.extract import (
+from rimsave import (
   family_members,
   iter_colonists,
   load_save,
   map_context_for,
 )
-from rimportrait.records import PawnRecord
+from rimsave.records import PawnRecord
 from rimportrait.render import render_family, render_portrait
 
 
-SAVE_PATH = Path(__file__).resolve().parents[1] / "sample.rws"
+SAVE_PATH = Path(__file__).resolve().parents[3] / "sample.rws"
 
 requires_save = pytest.mark.skipif(
   not SAVE_PATH.exists(),

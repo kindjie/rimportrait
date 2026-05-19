@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rimportrait.wealth import wealth_tier
+from rimsave.wealth import wealth_tier
 
 
 def test_none_returns_none():

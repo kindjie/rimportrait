@@ -14,7 +14,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from .extract import (
+from rimsave import (
   ModPaths,
   Save,
   autodetect_mod_paths,
@@ -31,7 +31,8 @@ from .extract import (
   map_context_for,
   parse_body_part_index,
 )
-from .records import MapContext, PawnRecord
+from rimsave.records import MapContext, PawnRecord
+
 from .render import render_family, render_portrait
 
 

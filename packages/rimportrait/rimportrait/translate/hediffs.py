@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..records import Hediff
+from rimsave.records import Hediff
 from ._common import label_for
 
 

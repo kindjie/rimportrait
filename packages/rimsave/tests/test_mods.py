@@ -11,8 +11,8 @@ from pathlib import Path
 
 from lxml import etree
 
-from rimportrait.extract.load import Save
-from rimportrait.extract.mods import (
+from rimsave.load import Save
+from rimsave.mods import (
   ModPaths,
   _parse_library_folders,
   _parse_raw_defs,

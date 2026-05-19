@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from rimportrait.colors import RGBA
-from rimportrait.records import (
+from rimsave.colors import RGBA
+from rimsave.records import (
   ApparelItem,
   BondedAnimal,
   CarriedInfant,

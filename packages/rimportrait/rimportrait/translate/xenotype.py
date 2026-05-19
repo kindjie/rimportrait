@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..records import Gene
+from rimsave.records import Gene
 from ._common import humanise, label_for
 
 

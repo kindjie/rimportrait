@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rimportrait.records import Hediff
+from rimsave.records import Hediff
 from rimportrait.translate.hediffs import (
   describe_chemical_state,
   describe_hediffs,
