@@ -38,6 +38,13 @@ class Weapon:
 
 
 @dataclass(frozen=True)
+class InventoryItem:
+  def_name: str
+  stack_count: int = 1
+  stuff: str | None = None
+
+
+@dataclass(frozen=True)
 class Hediff:
   def_name: str
   label: str | None = None
@@ -111,5 +118,6 @@ class PawnRecord:
   hediffs: tuple[Hediff, ...] = ()
   apparel: tuple[ApparelItem, ...] = ()
   equipment: tuple[Weapon, ...] = ()
+  inventory: tuple[InventoryItem, ...] = ()
   ideo: IdeoRecord | None = None
   relations: tuple[Relation, ...] = ()

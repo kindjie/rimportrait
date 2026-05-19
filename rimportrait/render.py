@@ -18,16 +18,19 @@ from .records import (
   MapContext,
   PawnRecord,
   Relation,
+  Weapon,
 )
 from .translate.apparel import (
   describe_apparel,
   describe_apparel_item,
+  is_utility_apparel,
   qualifier_for_apparel,
 )
 from .translate.favorite_color import describe_favorite_color
 from .translate.genes import describe_genes
 from .translate.hair import describe_gradient_mask, describe_hair_style
 from .translate.hediffs import describe_hediffs
+from .translate.inventory import describe_inventory
 from .translate.weapons import describe_weapon, qualifier_for_weapon
 from .translate.xenotype import describe_xenotype
 from .wealth import wealth_tier
@@ -113,19 +116,48 @@ def _gradient_value(gh: GradientHair | None) -> str | None:
   return "; ".join(parts)
 
 
-def _gear_summary(p: PawnRecord) -> str | None:
-  parts: list[str] = []
+def _apparel_phrase(it: ApparelItem) -> str:
+  base = describe_apparel_item(it)
+  qual = qualifier_for_apparel(it)
+  return f"{base} ({qual})" if qual else base
+
+
+def _weapon_phrase(w: Weapon) -> str:
+  base = describe_weapon(w)
+  qual = qualifier_for_weapon(w)
+  return f"{base} ({qual})" if qual else base
+
+
+def _gear_lines(p: PawnRecord) -> list[tuple[str, str]]:
+  """Split worn gear into three prominence buckets.
+
+  Returns (label, value) pairs for: armor/clothing layers, belt/utility
+  gear, and the wielded weapon. Each bucket is omitted when empty.
+  Inventory (carried pack contents) is reported on its own line by
+  _carrying_summary and is not included here, so the equipped
+  silhouette stays distinct from pack supplies.
+  """
+  armor: list[str] = []
+  utility: list[str] = []
   for it in p.apparel:
-    base = describe_apparel_item(it)
-    qual = qualifier_for_apparel(it)
-    parts.append(f"{base} ({qual})" if qual else base)
-  for w in p.equipment:
-    base = describe_weapon(w)
-    qual = qualifier_for_weapon(w)
-    parts.append(f"{base} ({qual})" if qual else base)
-  if not parts:
+    target = utility if is_utility_apparel(it.def_name) else armor
+    target.append(_apparel_phrase(it))
+  weapons = [_weapon_phrase(w) for w in p.equipment]
+  out: list[tuple[str, str]] = []
+  if armor:
+    out.append(("Worn armor/clothing", ", ".join(armor)))
+  if utility:
+    out.append(("Utility belts/gear", ", ".join(utility)))
+  if weapons:
+    out.append(("Wielded weapon", ", ".join(weapons)))
+  return out
+
+
+def _carrying_summary(p: PawnRecord) -> str | None:
+  items = describe_inventory(p.inventory)
+  if not items:
     return None
-  return ", ".join(parts)
+  return ", ".join(items)
 
 
 def _race_xenotype(p: PawnRecord) -> str | None:
@@ -306,7 +338,8 @@ def render_portrait(
           ", ".join(describe_genes(p.genes)) or None),
     _line("Visible implants/injuries/body changes",
           ", ".join(describe_hediffs(p.hediffs)) or None),
-    _line("Clothing, armor, gear, weapon summary", _gear_summary(p)),
+    *(_line(label, value) for label, value in _gear_lines(p)),
+    _line("Carrying (pack/inventory)", _carrying_summary(p)),
   ):
     if ln:
       lines.append(ln)
@@ -344,7 +377,8 @@ def _person_block(p: PawnRecord, relation_to_focus: str) -> list[str]:
           ", ".join(describe_genes(p.genes)) or None),
     _line("Visible implants/injuries/body changes",
           ", ".join(describe_hediffs(p.hediffs)) or None),
-    _line("Clothing, armor, gear, weapon summary", _gear_summary(p)),
+    *(_line(label, value) for label, value in _gear_lines(p)),
+    _line("Carrying (pack/inventory)", _carrying_summary(p)),
   ):
     if ln:
       lines.append(ln)

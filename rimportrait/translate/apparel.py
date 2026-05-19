@@ -131,6 +131,23 @@ def describe_apparel(items: Iterable[ApparelItem]) -> list[tuple[str, str]]:
   return out
 
 
+# Patterns that mark an apparel item as silhouette-level utility gear
+# (belts, packs, baby carriers, head-mounted optics) rather than a
+# clothing or armor layer. Substring match so modded variants like
+# `SBC_BabyCarrier` or `Foo_JumpPack` are caught alongside vanilla defs.
+_UTILITY_PATTERNS: tuple[str, ...] = (
+  "Belt",
+  "Bandolier",
+  "Carrier",
+  "Gunlink",
+  "JumpPack",
+)
+
+
+def is_utility_apparel(def_name: str) -> bool:
+  return any(p in def_name for p in _UTILITY_PATTERNS)
+
+
 def qualifier_for_apparel(item: ApparelItem) -> str | None:
   """Comma-joined visual qualifiers: material, color, style.
 

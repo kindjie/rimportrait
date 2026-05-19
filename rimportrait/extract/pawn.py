@@ -14,6 +14,7 @@ from ..records import (
   GradientHair,
   Hediff,
   IdeoRecord,
+  InventoryItem,
   MapContext,
   PawnRecord,
   Relation,
@@ -158,6 +159,25 @@ def _equipment(el: etree._Element) -> tuple[Weapon, ...]:
       stuff=li.findtext("stuff"),
       color=RGBA.parse(li.findtext("color")),
       style_def=li.findtext("styleDef"),
+    ))
+  return tuple(out)
+
+
+def _inventory(el: etree._Element) -> tuple[InventoryItem, ...]:
+  out: list[InventoryItem] = []
+  for li in el.iterfind("inventory/innerContainer/innerList/li"):
+    d = li.findtext("def")
+    if not d:
+      continue
+    raw = li.findtext("stackCount")
+    try:
+      count = int(raw) if raw else 1
+    except ValueError:
+      count = 1
+    out.append(InventoryItem(
+      def_name=d,
+      stack_count=count,
+      stuff=li.findtext("stuff"),
     ))
   return tuple(out)
 
@@ -410,6 +430,7 @@ def pawn_from_element(
     hediffs=_hediffs(el),
     apparel=_apparel(el),
     equipment=_equipment(el),
+    inventory=_inventory(el),
     ideo=_ideo(el, save),
     relations=_relations(el),
   )

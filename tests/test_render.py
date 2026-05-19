@@ -7,6 +7,7 @@ from rimportrait.records import (
   GradientHair,
   Hediff,
   IdeoRecord,
+  InventoryItem,
   MapContext,
   PawnRecord,
   Relation,
@@ -171,6 +172,102 @@ def test_portrait_surfaces_apparel_stuff_color_and_style():
   assert (
     "[dark charcoal gray, Samurai style]" in out
   )
+
+
+def test_carrying_line_lists_inventory_items_distinct_from_equipped():
+  pawn = PawnRecord(
+    pawn_id="102",
+    name_full="Sup Plier",
+    label="Sup",
+    role="colonist",
+    equipment=(Weapon("Gun_AssaultRifle"),),
+    inventory=(
+      InventoryItem("MealSimple", stack_count=3),
+      InventoryItem("Shell_HighExplosive", stack_count=12),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # Wielded weapon is on its own labeled line; pack items appear under
+  # the Carrying line; the two must not mix.
+  assert "Wielded weapon: modern assault rifle" in out
+  assert (
+    "Carrying (pack/inventory): 3× simple meal, "
+    "12× high-explosive mortar shell"
+  ) in out
+  weapon_line = [
+    ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
+  ][0]
+  assert "simple meal" not in weapon_line
+  assert "mortar shell" not in weapon_line
+
+
+def test_gear_lines_split_armor_utility_and_weapon():
+  pawn = PawnRecord(
+    pawn_id="104",
+    name_full="Stack Edpawn",
+    label="Stack",
+    role="colonist",
+    apparel=(
+      ApparelItem("Apparel_CollarShirt"),
+      ApparelItem("Apparel_PowerArmor"),
+      ApparelItem("Apparel_Bandolier"),
+      ApparelItem("Apparel_Gunlink"),
+      ApparelItem("SBC_BabyCarrier"),
+      ApparelItem("Apparel_ArmorMarineHelmetPrestige"),
+      ApparelItem("Apparel_Cape"),
+    ),
+    equipment=(Weapon("Gun_ChargeLance"),),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  armor_line = [
+    ln for ln in out.splitlines() if ln.startswith("Worn armor/clothing:")
+  ][0]
+  utility_line = [
+    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+  ][0]
+  weapon_line = [
+    ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
+  ][0]
+  # Armor/clothing: shirt + power armor + helmet + cape.
+  assert "buttoned collared shirt" in armor_line
+  assert "heavy powered combat armor" in armor_line
+  assert "prestige marine helmet" in armor_line
+  assert "cape" in armor_line
+  # Utility: bandolier, gunlink, baby carrier (incl. modded SBC_*).
+  assert "bandolier" in utility_line
+  assert "targeting visor" in utility_line
+  assert "baby carrier" in utility_line
+  # No cross-contamination between buckets.
+  assert "bandolier" not in armor_line
+  assert "collared shirt" not in utility_line
+  assert "charge lance" in weapon_line
+  assert "charge lance" not in armor_line
+  assert "charge lance" not in utility_line
+
+
+def test_gear_lines_omit_empty_buckets():
+  unarmed = PawnRecord(
+    pawn_id="105",
+    name_full="Bare Hands",
+    label="Bare",
+    role="colonist",
+    apparel=(ApparelItem("Apparel_CollarShirt"),),
+  )
+  out = render_portrait(unarmed, None, include_instruction=False)
+  assert "Worn armor/clothing:" in out
+  assert "Utility belts/gear:" not in out
+  assert "Wielded weapon:" not in out
+
+
+def test_carrying_line_omitted_when_inventory_empty():
+  pawn = PawnRecord(
+    pawn_id="103",
+    name_full="Empty Pack",
+    label="Empty",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Carrying" not in out
 
 
 def test_portrait_apparel_qualifier_omitted_when_no_signal():
