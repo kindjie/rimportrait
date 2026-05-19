@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from .colors import describe_rgba
 from .records import (
   ApparelItem,
+  CreepJoinerState,
   GradientHair,
   IdeoRecord,
   MapContext,
@@ -196,6 +197,56 @@ def _carrying_infant(p: PawnRecord) -> str | None:
   if ci.name:
     return f"{ci.name} (infant)"
   return f"{ci.pawn_id} (infant)"
+
+
+def _creepjoiner_value(
+  cj: CreepJoinerState | None,
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  """Render the latent creepjoiner persona as form + (benefit/downside).
+
+  All four slots (form, benefit, downside, aggressive) are def names
+  resolved through the mod-aware label index. Status flags
+  (triggered_downside / has_left) are appended when set so the LLM
+  can pick up that the dark side has fired or the entity has fled.
+  """
+  if cj is None:
+    return None
+
+  def lbl(d: str | None) -> str | None:
+    if not d:
+      return None
+    return (labels.get(d) if labels else None) or humanise(d)
+
+  bits: list[str] = []
+  form = lbl(cj.form)
+  if form:
+    bits.append(form)
+  pairs: list[str] = []
+  benefit = lbl(cj.benefit)
+  if benefit:
+    pairs.append(f"benefit: {benefit}")
+  downside = lbl(cj.downside)
+  if downside:
+    pairs.append(f"downside: {downside}")
+  aggressive = lbl(cj.aggressive)
+  if aggressive:
+    pairs.append(f"aggressive: {aggressive}")
+  rejection = lbl(cj.rejection)
+  if rejection:
+    pairs.append(f"rejection: {rejection}")
+  if pairs:
+    bits.append("(" + "; ".join(pairs) + ")")
+  flags: list[str] = []
+  if cj.triggered_downside:
+    flags.append("downside triggered")
+  if cj.has_left:
+    flags.append("has left")
+  if flags:
+    bits.append("[" + ", ".join(flags) + "]")
+  if not bits:
+    return None
+  return " ".join(bits)
 
 
 def _abilities_value(
@@ -513,6 +564,8 @@ def render_portrait(
     _line("Shambler state",
           ", ".join(describe_shambler_state(p.hediffs, def_labels))
           or None),
+    _line("Creepjoiner state",
+          _creepjoiner_value(p.creepjoiner, def_labels)),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
@@ -576,6 +629,8 @@ def _person_block(
     _line("Shambler state",
           ", ".join(describe_shambler_state(p.hediffs, def_labels))
           or None),
+    _line("Creepjoiner state",
+          _creepjoiner_value(p.creepjoiner, def_labels)),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),

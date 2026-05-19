@@ -84,6 +84,25 @@ class CarriedInfant:
 
 
 @dataclass(frozen=True)
+class CreepJoinerState:
+  """Anomaly creepjoiner quest state.
+
+  Pawns from a CreepJoiner quest carry latent benefit/downside/
+  rejection/aggressive options; the active form (DealMaker, etc.)
+  is the visible persona. ``triggered_downside`` and ``has_left``
+  reflect whether the dark side has fired and whether they've left
+  the colony.
+  """
+  form: str | None = None
+  benefit: str | None = None
+  downside: str | None = None
+  rejection: str | None = None
+  aggressive: str | None = None
+  triggered_downside: bool = False
+  has_left: bool = False
+
+
+@dataclass(frozen=True)
 class IdeoRecord:
   name: str
   color: RGBA | None = None
@@ -157,3 +176,4 @@ class PawnRecord:
   # Current psyfocus in [0..1] when meaningful (only emitted when a
   # psycaster hediff is present). None otherwise.
   psyfocus: float | None = None
+  creepjoiner: CreepJoinerState | None = None

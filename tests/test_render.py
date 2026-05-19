@@ -4,6 +4,7 @@ from rimportrait.colors import RGBA
 from rimportrait.records import (
   ApparelItem,
   CarriedInfant,
+  CreepJoinerState,
   Gene,
   GradientHair,
   Hediff,
@@ -446,6 +447,73 @@ def test_commanded_mechs_omitted_when_pawn_commands_none():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   assert "Commanded mechs:" not in out
+
+
+def test_creepjoiner_state_renders_form_and_latent_options():
+  pawn = PawnRecord(
+    pawn_id="950",
+    name_full="Stranger",
+    label="Stranger",
+    role="colonist",
+    creepjoiner=CreepJoinerState(
+      form="DealMaker",
+      benefit="PerfectHuman",
+      downside="PsychicAgony",
+      rejection="AggressiveRejection",
+      aggressive="Assault",
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert (
+    "Creepjoiner state: deal maker (benefit: perfect human; "
+    "downside: psychic agony; aggressive: assault; "
+    "rejection: aggressive rejection)" in out
+  )
+
+
+def test_creepjoiner_state_appends_flags_when_triggered_or_left():
+  pawn = PawnRecord(
+    pawn_id="951",
+    name_full="Gone Stranger",
+    label="Gone",
+    role="colonist",
+    creepjoiner=CreepJoinerState(
+      form="DealMaker",
+      benefit="PerfectHuman",
+      downside="Leaves",
+      aggressive="SightstealerAttack",
+      triggered_downside=True,
+      has_left=True,
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "[downside triggered, has left]" in out
+
+
+def test_creepjoiner_state_threads_mod_labels():
+  pawn = PawnRecord(
+    pawn_id="952",
+    name_full="Stranger",
+    label="Stranger",
+    role="colonist",
+    creepjoiner=CreepJoinerState(form="DealMaker"),
+  )
+  labels = {"DealMaker": "the deal-maker"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels
+  )
+  assert "Creepjoiner state: the deal-maker" in out
+
+
+def test_creepjoiner_state_omitted_when_absent():
+  pawn = PawnRecord(
+    pawn_id="953",
+    name_full="Plain",
+    label="Plain",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Creepjoiner state:" not in out
 
 
 def test_shambler_state_line_promoted_above_body_changes():

@@ -41,6 +41,14 @@ _INTERESTING_DEF_TYPES = (
   "RoyalTitleDef",
   "InspirationDef",
   "AbilityDef",
+  # Anomaly creepjoiner def families (note the inconsistent
+  # capitalisation in CreepjoinerRejectionDef vs the others — that's
+  # the actual tag name in RimWorld's Anomaly Defs).
+  "CreepJoinerFormKindDef",
+  "CreepJoinerBenefitDef",
+  "CreepJoinerDownsideDef",
+  "CreepjoinerRejectionDef",
+  "CreepJoinerAggressiveDef",
 )
 
 

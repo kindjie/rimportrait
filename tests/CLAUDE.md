@@ -69,6 +69,13 @@
   Anomaly Shambler reanimation hediff family so they appear on a
   dedicated "Shambler state" line near Chemical/drug state rather
   than mixing with permanent body changes.
+- Creepjoiner state covered in test_render.py: extractor reads the
+  <creepjoiner> subtree (form/benefit/downside/aggressive/rejection
+  + triggered_downside / has_left flags). Renderer produces a
+  compact "Creepjoiner state: <form> (benefit: …; downside: …)
+  [flags…]" line via mod-aware labels (the five
+  CreepJoiner*Def families are part of the def index, including
+  the inconsistently-cased CreepjoinerRejectionDef tag).
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

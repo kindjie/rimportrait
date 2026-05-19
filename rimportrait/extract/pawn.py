@@ -11,6 +11,7 @@ from ..colors import RGBA
 from ..records import (
   ApparelItem,
   CarriedInfant,
+  CreepJoinerState,
   Gene,
   GradientHair,
   Hediff,
@@ -292,6 +293,31 @@ def _commanded_mechs(
     if d:
       out.append(d)
   return tuple(out)
+
+
+def _creepjoiner(el: etree._Element) -> CreepJoinerState | None:
+  """Read the Anomaly <creepjoiner> subtree if non-null/non-empty.
+
+  All fields are def references (CreepJoinerFormKindDef etc.) that we
+  pass through verbatim - the renderer threads them through the
+  mod-aware label index.
+  """
+  cj = el.find("creepjoiner")
+  if cj is None or cj.attrib.get("IsNull") == "True":
+    return None
+  if len(list(cj)) == 0:
+    return None
+  triggered = (cj.findtext("triggeredDownside") or "").lower() == "true"
+  left = (cj.findtext("hasLeft") or "").lower() == "true"
+  return CreepJoinerState(
+    form=cj.findtext("form"),
+    benefit=cj.findtext("benefit"),
+    downside=cj.findtext("downside"),
+    rejection=cj.findtext("rejection"),
+    aggressive=cj.findtext("aggressive"),
+    triggered_downside=triggered,
+    has_left=left,
+  )
 
 
 def _inspiration(el: etree._Element) -> str | None:
@@ -626,6 +652,7 @@ def pawn_from_element(
     commanded_mechs=_commanded_mechs(el, save),
     abilities=_abilities(el),
     psyfocus=_psyfocus_if_psycaster(el),
+    creepjoiner=_creepjoiner(el),
   )
 
 
