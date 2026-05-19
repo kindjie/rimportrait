@@ -39,6 +39,7 @@ _INTERESTING_DEF_TYPES = (
   "XenotypeDef",
   "BodyPartDef",
   "RoyalTitleDef",
+  "InspirationDef",
 )
 
 

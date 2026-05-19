@@ -316,6 +316,50 @@ def test_carrying_line_omitted_when_inventory_empty():
   assert "Carrying" not in out
 
 
+def test_inspiration_renders_def_name_when_no_mod_data():
+  pawn = PawnRecord(
+    pawn_id="500",
+    name_full="Inspire Dee",
+    label="Inspire",
+    role="colonist",
+    inspiration="Inspired_Taming",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # Falls back to humanised def-name suffix, so the inspiration def
+  # and its slug both appear with the standard dash separator.
+  assert "Inspiration: Inspired_Taming" in out
+
+
+def test_inspiration_renders_mod_description_when_available():
+  pawn = PawnRecord(
+    pawn_id="501",
+    name_full="Inspire Dee",
+    label="Inspire",
+    role="colonist",
+    inspiration="Frenzy_Shoot",
+  )
+  descriptions = {"Frenzy_Shoot": "A wild-eyed surge of ranged focus."}
+  out = render_portrait(
+    pawn, None, include_instruction=False,
+    def_descriptions=descriptions,
+  )
+  assert (
+    "Inspiration: Frenzy_Shoot - A wild-eyed surge of ranged focus."
+    in out
+  )
+
+
+def test_inspiration_omitted_when_pawn_has_no_inspiration():
+  pawn = PawnRecord(
+    pawn_id="502",
+    name_full="Plain",
+    label="Plain",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Inspiration:" not in out
+
+
 def test_baby_carrier_marked_empty_when_no_infant():
   pawn = PawnRecord(
     pawn_id="400",

@@ -146,3 +146,4 @@ class PawnRecord:
   relations: tuple[Relation, ...] = ()
   royal_titles: tuple[RoyalTitle, ...] = ()
   carried_infant: CarriedInfant | None = None
+  inspiration: str | None = None

@@ -32,7 +32,7 @@ from .translate.apparel import (
 from .translate.favorite_color import describe_favorite_color
 from .translate.genes import describe_genes
 from .translate.hair import describe_gradient_mask, describe_hair_style
-from .translate._common import humanise
+from .translate._common import description_for, humanise
 from .translate.hediffs import describe_hediffs
 from .translate.inventory import describe_inventory
 from .translate.weapons import describe_weapon, qualifier_for_weapon
@@ -192,6 +192,26 @@ def _carrying_infant(p: PawnRecord) -> str | None:
   if ci.name:
     return f"{ci.name} (infant)"
   return f"{ci.pawn_id} (infant)"
+
+
+def _inspiration_value(
+  inspiration: str | None,
+  descriptions: dict[str, str] | None = None,
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  """Render the active inspiration def with mod-aware description.
+
+  Inspirations (Inspired_Taming, Frenzy_Shoot, ...) are visible
+  expression cues - frenzied vs calm-focused vs spirit-soaring - so
+  we surface the description when available, falling back through
+  the def label and humanised slug per the data-first principle.
+  """
+  if not inspiration:
+    return None
+  resolved = description_for(inspiration, descriptions, labels)
+  if resolved and resolved != humanise(inspiration):
+    return f"{inspiration} - {resolved}"
+  return inspiration
 
 
 def _royal_title_line(
@@ -414,6 +434,8 @@ def render_portrait(
           ", ".join(p.traits) if p.traits else None),
     _line("Personality/expression", _personality(p)),
     _line("Mood", p.mood),
+    _line("Inspiration",
+          _inspiration_value(p.inspiration, def_descriptions, def_labels)),
     _line("Pose/activity", p.current_job),
     _line("Immediate setting", p.location),
     _line("Favorite color/accent",
@@ -465,6 +487,8 @@ def _person_block(
           ", ".join(p.traits) if p.traits else None),
     _line("Personality/expression", _personality(p)),
     _line("Mood", p.mood),
+    _line("Inspiration",
+          _inspiration_value(p.inspiration, def_descriptions, def_labels)),
     _line("Pose/activity before portrait", p.current_job),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),

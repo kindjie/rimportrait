@@ -225,6 +225,14 @@ def _relations(el: etree._Element) -> tuple[Relation, ...]:
   return tuple(out)
 
 
+def _inspiration(el: etree._Element) -> str | None:
+  cur = el.find("mindState/inspirationHandler/curState")
+  if cur is None or cur.attrib.get("IsNull") == "True":
+    return None
+  d = cur.findtext("def")
+  return d.strip() if d and d.strip() else None
+
+
 def _carried_infant(
   el: etree._Element, save: Save
 ) -> CarriedInfant | None:
@@ -545,6 +553,7 @@ def pawn_from_element(
     relations=_relations(el),
     royal_titles=_royal_titles(el, save),
     carried_infant=_carried_infant(el, save),
+    inspiration=_inspiration(el),
   )
 
 

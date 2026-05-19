@@ -42,6 +42,10 @@
   an `empty` qualifier when carriedBaby is null, and a "Carrying
   infant in arms" line appears when an infant ref resolves. Falls
   back to the bare pawn id if the carried pawn can't be resolved.
+- Inspiration rendering covered in test_render.py: emits the active
+  inspiration def with mod-aware description fallback. InspirationDef
+  is added to the mod-aware index so labels (shoot frenzy etc.) flow
+  through automatically.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)
