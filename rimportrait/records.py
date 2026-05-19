@@ -55,6 +55,7 @@ class Hediff:
 class Gene:
   def_name: str
   label: str | None = None
+  is_xenogene: bool = False
 
 
 @dataclass(frozen=True)

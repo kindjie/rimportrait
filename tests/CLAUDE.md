@@ -23,6 +23,10 @@
   index) and falls back through `mod description -> mod label ->
   humanised slug`. Tests assert both the no-labels (humanised) path
   and the labels-provided path where relevant.
+- `test_xenotype.py` — unit coverage for the xenotype fallback chain:
+  description -> label -> xenogene list -> humanised slug. Endogenes
+  are excluded from the gene-list fallback so only the xenotype's
+  defining genes appear.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

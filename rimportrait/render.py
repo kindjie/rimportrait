@@ -176,7 +176,9 @@ def _race_xenotype(
   labels: dict[str, str] | None = None,
 ) -> str | None:
   if p.xenotype:
-    desc = describe_xenotype(p.xenotype, descriptions, labels)
+    desc = describe_xenotype(
+      p.xenotype, descriptions, labels, p.genes
+    )
     # Suppress the redundant dash form when the description is just
     # the humanised def name; emit only the def name in that case.
     if desc and desc != humanise(p.xenotype):

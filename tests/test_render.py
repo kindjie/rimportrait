@@ -541,6 +541,25 @@ def test_xenotype_renders_mod_aware_description_when_provided():
   ) in out
 
 
+def test_xenotype_falls_back_to_xenogene_list_when_no_description():
+  pawn = PawnRecord(
+    pawn_id="14c",
+    name_full="Vam Pyre",
+    label="Vam",
+    role="colonist",
+    xenotype="Sanguophage",
+    genes=(
+      Gene("Fangs", is_xenogene=True),
+      Gene("Bloodfeeder", is_xenogene=True),
+      Gene("Hair_DarkBlack", is_xenogene=False),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # No descriptions/labels threaded -> gene-list fallback engages and
+  # enumerates xenogenes only; the endogene is excluded.
+  assert "Race/xenotype: Sanguophage - fangs, bloodfeeder" in out
+
+
 def test_family_empty_members_still_emits_envelope():
   focus = PawnRecord(
     pawn_id="42",

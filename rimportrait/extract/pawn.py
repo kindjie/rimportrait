@@ -114,11 +114,14 @@ def _gradient_hair(el: etree._Element) -> GradientHair | None:
 
 def _genes(el: etree._Element) -> tuple[Gene, ...]:
   out: list[Gene] = []
-  for path in ("genes/xenogenes/li", "genes/endogenes/li"):
-    for li in el.iterfind(path):
-      d = li.findtext("def")
-      if d:
-        out.append(Gene(def_name=d))
+  for li in el.iterfind("genes/xenogenes/li"):
+    d = li.findtext("def")
+    if d:
+      out.append(Gene(def_name=d, is_xenogene=True))
+  for li in el.iterfind("genes/endogenes/li"):
+    d = li.findtext("def")
+    if d:
+      out.append(Gene(def_name=d, is_xenogene=False))
   return tuple(out)
 
 
