@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.env
+
+# Build artifacts
+dist/
+build/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local state
+.claude/settings.local.json
+
+# Local RimWorld saves (kept out of public repo)
+*.rws
+
+# Generated portrait/family output
+out/
