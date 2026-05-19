@@ -41,6 +41,17 @@ def _is_ignored(def_name: str) -> bool:
   return any(p in def_name for p in _IGNORED_PATTERNS)
 
 
+def is_pilot_state(def_name: str) -> bool:
+  """Detect the Odyssey gravship pilot-implant hediff family.
+
+  Matches the vanilla ``PilotAssistant`` neural-interface implant
+  plus any modded pilot-class hediff via substring on ``Pilot``.
+  The predicate is only called on hediff defs, so the broad match
+  is safe.
+  """
+  return "Pilot" in def_name
+
+
 def is_shambler_state(def_name: str) -> bool:
   """Detect the Anomaly Shambler reanimation hediff family.
 
@@ -88,6 +99,8 @@ def describe_hediffs(
       continue
     if is_shambler_state(h.def_name):
       continue
+    if is_pilot_state(h.def_name):
+      continue
     out.append(_format(h, labels))
   return out
 
@@ -117,6 +130,21 @@ def describe_shambler_state(
     if _is_ignored(h.def_name):
       continue
     if not is_shambler_state(h.def_name):
+      continue
+    out.append(_format(h, labels))
+  return out
+
+
+def describe_pilot_state(
+  hediffs: Iterable[Hediff],
+  labels: dict[str, str] | None = None,
+) -> list[str]:
+  """Return only Odyssey pilot-implant hediffs."""
+  out: list[str] = []
+  for h in hediffs:
+    if _is_ignored(h.def_name):
+      continue
+    if not is_pilot_state(h.def_name):
       continue
     out.append(_format(h, labels))
   return out

@@ -449,6 +449,67 @@ def test_commanded_mechs_omitted_when_pawn_commands_none():
   assert "Commanded mechs:" not in out
 
 
+def test_pilot_state_line_emits_when_implant_present():
+  pawn = PawnRecord(
+    pawn_id="970",
+    name_full="Sky Pilot",
+    label="Sky",
+    role="colonist",
+    hediffs=(
+      Hediff("PilotAssistant"),
+      Hediff("ArchotechEye", body_part="left eye"),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Pilot state: pilot assistant" in out
+  body_line = [
+    ln for ln in out.splitlines()
+    if ln.startswith("Visible implants/injuries/body changes:")
+  ][0]
+  assert "pilot assistant" not in body_line
+  assert "archotech eye" in body_line
+
+
+def test_pilot_state_appends_currently_piloting_flag():
+  pawn = PawnRecord(
+    pawn_id="971",
+    name_full="At Helm",
+    label="At Helm",
+    role="colonist",
+    hediffs=(Hediff("PilotAssistant"),),
+    current_job="PilotConsole",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert (
+    "Pilot state: pilot assistant, currently piloting at the helm"
+    in out
+  )
+
+
+def test_pilot_state_emits_for_currently_piloting_even_without_implant():
+  pawn = PawnRecord(
+    pawn_id="972",
+    name_full="Stand In",
+    label="Stand In",
+    role="colonist",
+    current_job="PilotConsole",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Pilot state: currently piloting at the helm" in out
+
+
+def test_pilot_state_omitted_when_neither_implant_nor_piloting():
+  pawn = PawnRecord(
+    pawn_id="973",
+    name_full="Earthbound",
+    label="Earth",
+    role="colonist",
+    current_job="HaulToCell",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Pilot state:" not in out
+
+
 def test_creepjoiner_state_renders_form_and_latent_options():
   pawn = PawnRecord(
     pawn_id="950",

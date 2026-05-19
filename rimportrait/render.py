@@ -37,6 +37,7 @@ from .translate._common import description_for, humanise
 from .translate.hediffs import (
   describe_chemical_state,
   describe_hediffs,
+  describe_pilot_state,
   describe_shambler_state,
 )
 from .translate.inventory import describe_inventory
@@ -197,6 +198,27 @@ def _carrying_infant(p: PawnRecord) -> str | None:
   if ci.name:
     return f"{ci.name} (infant)"
   return f"{ci.pawn_id} (infant)"
+
+
+def _pilot_state_value(
+  p: PawnRecord,
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  """Combine the pilot implant + actively-piloting cue.
+
+  Always emits the implant phrase when present; appends a
+  ``(currently piloting)`` flag when the pawn's curJob is
+  PilotConsole so the LLM can render an action-shot at the
+  gravship helm rather than the latent capability alone.
+  """
+  implant_parts = describe_pilot_state(p.hediffs, labels)
+  actively = (p.current_job or "") == "PilotConsole"
+  if not implant_parts and not actively:
+    return None
+  parts: list[str] = list(implant_parts)
+  if actively:
+    parts.append("currently piloting at the helm")
+  return ", ".join(parts)
 
 
 def _creepjoiner_value(
@@ -566,6 +588,7 @@ def render_portrait(
           or None),
     _line("Creepjoiner state",
           _creepjoiner_value(p.creepjoiner, def_labels)),
+    _line("Pilot state", _pilot_state_value(p, def_labels)),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
@@ -631,6 +654,7 @@ def _person_block(
           or None),
     _line("Creepjoiner state",
           _creepjoiner_value(p.creepjoiner, def_labels)),
+    _line("Pilot state", _pilot_state_value(p, def_labels)),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),

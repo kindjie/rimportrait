@@ -4,8 +4,10 @@ from rimportrait.records import Hediff
 from rimportrait.translate.hediffs import (
   describe_chemical_state,
   describe_hediffs,
+  describe_pilot_state,
   describe_shambler_state,
   is_drug_high,
+  is_pilot_state,
   is_shambler_state,
 )
 
@@ -93,3 +95,35 @@ def test_describe_shambler_state_threads_labels():
     labels={"Shambler": "reanimated shambler"},
   )
   assert out == ["reanimated shambler"]
+
+
+def test_is_pilot_state_recognises_pilot_assistant():
+  assert is_pilot_state("PilotAssistant")
+  assert is_pilot_state("PilotImplantModded")
+  assert not is_pilot_state("ArchotechEye")
+  assert not is_pilot_state("BionicArm")
+
+
+def test_describe_pilot_state_returns_pilot_only():
+  out = describe_pilot_state((
+    Hediff("PilotAssistant"),
+    Hediff("ArchotechEye", body_part="left eye"),
+    Hediff("Shambler"),
+  ))
+  assert out == ["pilot assistant"]
+
+
+def test_describe_hediffs_excludes_pilot_state():
+  out = describe_hediffs((
+    Hediff("PilotAssistant"),
+    Hediff("BionicArm"),
+  ))
+  assert out == ["bionic arm"]
+
+
+def test_describe_pilot_state_threads_labels():
+  out = describe_pilot_state(
+    (Hediff("PilotAssistant"),),
+    labels={"PilotAssistant": "pilot assistant"},
+  )
+  assert out == ["pilot assistant"]

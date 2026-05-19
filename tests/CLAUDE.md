@@ -76,6 +76,13 @@
   [flags…]" line via mod-aware labels (the five
   CreepJoiner*Def families are part of the def index, including
   the inconsistently-cased CreepjoinerRejectionDef tag).
+- Pilot state covered in test_chemical_state.py + test_render.py:
+  is_pilot_state + describe_pilot_state partition the Odyssey
+  PilotAssistant hediff family out of body-changes. The render
+  helper also appends a "currently piloting at the helm" flag when
+  the pawn's curJob is PilotConsole, so the line fires for either
+  the implanted-but-idle pawn or any pawn actively manning the
+  console.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)
