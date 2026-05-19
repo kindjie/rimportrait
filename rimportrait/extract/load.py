@@ -24,6 +24,29 @@ class Save:
   factions_by_id: dict[str, etree._Element] = field(default_factory=dict)
   player_faction_id: str | None = None
   current_tick: int = 0
+  _things_by_id: dict[str, str] | None = None
+
+  def thing_def(self, ref: str) -> str | None:
+    """Resolve a Thing_<id> reference to its <def> string.
+
+    Lazy-builds a flat id->def index across every <thing> in the save
+    on first call (covers Pawns, Buildings, Plants, Items). Used by
+    fields like ``connections/connectedThings`` that reference
+    non-pawn things by id.
+    """
+    if not ref:
+      return None
+    if self._things_by_id is None:
+      idx: dict[str, str] = {}
+      for el in self.root.iter("thing"):
+        tid = el.findtext("id")
+        d = el.findtext("def")
+        if tid and d:
+          idx[tid] = d
+      self._things_by_id = idx
+    if ref.startswith("Thing_"):
+      ref = ref[len("Thing_"):]
+    return self._things_by_id.get(ref)
 
 
 def _strip_thing_prefix(ref: str) -> str:

@@ -449,6 +449,51 @@ def test_commanded_mechs_omitted_when_pawn_commands_none():
   assert "Commanded mechs:" not in out
 
 
+def test_connections_line_groups_and_counts_thing_defs():
+  pawn = PawnRecord(
+    pawn_id="980",
+    name_full="Tree Friend",
+    label="Tree",
+    role="colonist",
+    connections=(
+      "Plant_TreeGauranlen",
+      "Dryad",
+      "Dryad",
+      "Dryad",
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert (
+    "Connections: dryad × 3, plant tree gauranlen" in out
+  )
+
+
+def test_connections_line_threads_mod_labels():
+  pawn = PawnRecord(
+    pawn_id="981",
+    name_full="Tree Friend",
+    label="Tree",
+    role="colonist",
+    connections=("Plant_TreeGauranlen",),
+  )
+  labels = {"Plant_TreeGauranlen": "gauranlen tree"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels
+  )
+  assert "Connections: gauranlen tree" in out
+
+
+def test_connections_line_omitted_when_empty():
+  pawn = PawnRecord(
+    pawn_id="982",
+    name_full="Plain",
+    label="Plain",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Connections:" not in out
+
+
 def test_pilot_state_line_emits_when_implant_present():
   pawn = PawnRecord(
     pawn_id="970",

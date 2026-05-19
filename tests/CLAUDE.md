@@ -83,6 +83,11 @@
   the pawn's curJob is PilotConsole, so the line fires for either
   the implanted-but-idle pawn or any pawn actively manning the
   console.
+- Connections covered in test_render.py: extractor resolves
+  connections/connectedThings refs via Save.thing_def (lazy
+  id->def index across all <thing> in the save, not just pawns).
+  Renderer groups by def name with a count×label breakdown sorted
+  by count desc, threaded through mod-aware labels.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

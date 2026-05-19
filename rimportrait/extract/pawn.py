@@ -295,6 +295,29 @@ def _commanded_mechs(
   return tuple(out)
 
 
+def _connections(
+  el: etree._Element, save: Save
+) -> tuple[str, ...]:
+  """Resolve <connections/connectedThings> Thing refs to ThingDef names.
+
+  Covers gauranlen-tree links (Plant_TreeGauranlen), animal-connection
+  bonds, and any mod-introduced connected-thing variants. Refs that
+  can't be resolved are dropped silently.
+  """
+  ct = el.find("connections/connectedThings")
+  if ct is None or ct.attrib.get("IsNull") == "True":
+    return ()
+  out: list[str] = []
+  for li in ct.iterfind("li"):
+    text = (li.text or "").strip()
+    if not text:
+      continue
+    d = save.thing_def(text)
+    if d:
+      out.append(d)
+  return tuple(out)
+
+
 def _creepjoiner(el: etree._Element) -> CreepJoinerState | None:
   """Read the Anomaly <creepjoiner> subtree if non-null/non-empty.
 
@@ -653,6 +676,7 @@ def pawn_from_element(
     abilities=_abilities(el),
     psyfocus=_psyfocus_if_psycaster(el),
     creepjoiner=_creepjoiner(el),
+    connections=_connections(el, save),
   )
 
 

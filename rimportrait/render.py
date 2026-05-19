@@ -308,6 +308,33 @@ def _psyfocus_value(psyfocus: float | None) -> str | None:
   return f"{band} ({pct}%)"
 
 
+def _connections_value(
+  connections: tuple[str, ...],
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  """Compact connections summary with per-def tallies.
+
+  Used for gauranlen tree links, dryad bonds, and any mod-defined
+  connected things. Order matches commanded-mechs: sort by count
+  descending, then label ascending; singleton entries omit the
+  ``× 1`` suffix.
+  """
+  if not connections:
+    return None
+  counts: dict[str, int] = {}
+  for d in connections:
+    counts[d] = counts.get(d, 0) + 1
+  by_count = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+  parts: list[str] = []
+  for def_name, n in by_count:
+    label = (
+      (labels.get(def_name) if labels else None)
+      or humanise(def_name)
+    )
+    parts.append(f"{label} × {n}" if n > 1 else label)
+  return ", ".join(parts)
+
+
 def _commanded_mechs_value(
   mech_defs: tuple[str, ...],
   labels: dict[str, str] | None = None,
@@ -591,6 +618,8 @@ def render_portrait(
     _line("Pilot state", _pilot_state_value(p, def_labels)),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
+    _line("Connections",
+          _connections_value(p.connections, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity", p.current_job),
@@ -657,6 +686,8 @@ def _person_block(
     _line("Pilot state", _pilot_state_value(p, def_labels)),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
+    _line("Connections",
+          _connections_value(p.connections, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity before portrait", p.current_job),

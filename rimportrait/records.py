@@ -177,3 +177,7 @@ class PawnRecord:
   # psycaster hediff is present). None otherwise.
   psyfocus: float | None = None
   creepjoiner: CreepJoinerState | None = None
+  # Tree/dryad/etc. ``connectedThings`` resolved to their ThingDef
+  # names so the renderer can label them via the mod-aware def
+  # index. Empty when the pawn has no active connection.
+  connections: tuple[str, ...] = ()
