@@ -33,7 +33,8 @@ from rimsave import (
 )
 from rimsave.records import MapContext, PawnRecord
 
-from .render import render_family, render_portrait
+from . import llm
+from .render import instruction_for, render_family, render_portrait
 
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -121,6 +122,27 @@ def _build_parser() -> argparse.ArgumentParser:
     help=(
       "Emit only the block, without the trailing image-prompt "
       "instruction text."
+    ),
+  )
+  p.add_argument(
+    "--generate", action="store_true",
+    help=(
+      "Pipe the rendered block + instruction through an LLM and emit "
+      "the returned image-generation prompt in place of the block."
+    ),
+  )
+  p.add_argument(
+    "--provider", choices=llm.PROVIDERS, default="google",
+    help=(
+      "LLM provider for --generate. API keys read from "
+      "GEMINI_API_KEY (google) or OPENAI_API_KEY (openai)."
+    ),
+  )
+  p.add_argument(
+    "--model", default=None,
+    help=(
+      "Model name for --generate. Defaults to gemini-flash-latest "
+      "(google) or gpt-4o-mini (openai)."
     ),
   )
   return p
@@ -212,57 +234,88 @@ def _context(
   return ctx
 
 
+def _maybe_generate(
+  args: argparse.Namespace, block: str, kind: str
+) -> str:
+  if not args.generate:
+    return block
+  return llm.complete(
+    args.provider,
+    system=instruction_for(kind),
+    user=block,
+    model=args.model,
+  )
+
+
 def main(argv: list[str] | None = None) -> int:
   args = _build_parser().parse_args(argv)
+  if args.generate and args.no_instruction:
+    print(
+      "error: --no-instruction is incompatible with --generate",
+      file=sys.stderr,
+    )
+    return 2
   if not args.save.exists():
     print(f"error: save not found: {args.save}", file=sys.stderr)
     return 2
   save = load_save(args.save)
-  inst = not args.no_instruction
+  # When piping through an LLM, the instruction is the system message
+  # rather than appended to the block, so the rendered block must be
+  # instruction-free.
+  inst = not args.no_instruction and not args.generate
   def_index, defs_desc, defs_label, defs_cat = _build_index(save, args)
   body_parts = _build_body_parts(args)
 
-  if args.family:
-    focus = find_pawn(save, args.family, def_index, body_parts)
-    if focus is None:
-      print(f"error: no pawn named {args.family!r}", file=sys.stderr)
-      return 4
-    members = family_members(save, focus, def_index, body_parts)
-    block = render_family(
-      focus, members, _context(save, focus, args),
-      include_instruction=inst,
-      def_descriptions=defs_desc, def_labels=defs_label,
-      def_categories=defs_cat,
-    )
-    _emit(args.out_dir, block, focus, "family")
-    return 0
+  try:
+    if args.family:
+      focus = find_pawn(save, args.family, def_index, body_parts)
+      if focus is None:
+        print(
+          f"error: no pawn named {args.family!r}", file=sys.stderr
+        )
+        return 4
+      members = family_members(save, focus, def_index, body_parts)
+      block = render_family(
+        focus, members, _context(save, focus, args),
+        include_instruction=inst,
+        def_descriptions=defs_desc, def_labels=defs_label,
+        def_categories=defs_cat,
+      )
+      _emit(args.out_dir, _maybe_generate(args, block, "family"),
+            focus, "family")
+      return 0
 
-  if args.pawn:
-    p = find_pawn(save, args.pawn, def_index, body_parts)
-    if p is None:
-      print(f"error: no pawn named {args.pawn!r}", file=sys.stderr)
-      return 4
-    block = render_portrait(
-      p, _context(save, p, args),
-      include_instruction=inst,
-      def_descriptions=defs_desc, def_labels=defs_label,
-      def_categories=defs_cat,
-    )
-    _emit(args.out_dir, block, p, "portrait")
-    return 0
+    if args.pawn:
+      p = find_pawn(save, args.pawn, def_index, body_parts)
+      if p is None:
+        print(f"error: no pawn named {args.pawn!r}", file=sys.stderr)
+        return 4
+      block = render_portrait(
+        p, _context(save, p, args),
+        include_instruction=inst,
+        def_descriptions=defs_desc, def_labels=defs_label,
+        def_categories=defs_cat,
+      )
+      _emit(args.out_dir, _maybe_generate(args, block, "portrait"),
+            p, "portrait")
+      return 0
 
-  for p in _gather_default(
-    save, args.include_prisoners, args.include_guests,
-    def_index, body_parts,
-  ):
-    block = render_portrait(
-      p, _context(save, p, args),
-      include_instruction=inst,
-      def_descriptions=defs_desc, def_labels=defs_label,
-      def_categories=defs_cat,
-    )
-    _emit(args.out_dir, block, p, "portrait")
-  return 0
+    for p in _gather_default(
+      save, args.include_prisoners, args.include_guests,
+      def_index, body_parts,
+    ):
+      block = render_portrait(
+        p, _context(save, p, args),
+        include_instruction=inst,
+        def_descriptions=defs_desc, def_labels=defs_label,
+        def_categories=defs_cat,
+      )
+      _emit(args.out_dir, _maybe_generate(args, block, "portrait"),
+            p, "portrait")
+    return 0
+  except Exception as e:
+    print(f"error: {e}", file=sys.stderr)
+    return 3
 
 
 if __name__ == "__main__":

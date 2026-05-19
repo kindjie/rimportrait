@@ -18,6 +18,10 @@ Render-layer and translate-module tests. Save-extraction tests live in
 - `test_chemical_state.py` — drug-high, Shambler, and Odyssey pilot
   hediff partitioning. Each `is_X` / `describe_X` pair pulls its
   cluster out of `describe_hediffs` so body-changes line stays clean.
+- `test_llm.py` — `--generate` provider dispatch + missing-SDK error
+  shape. Real provider SDK calls are monkeypatched so the suite stays
+  offline-safe and doesn't require either optional dep to be
+  installed.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture acts as the
   canonical end-to-end shape check. Additional cases cover

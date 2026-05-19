@@ -5,6 +5,11 @@ description = "Generate AI-image prompt context blocks from RimWorld .rws saves.
 requires-python = ">=3.11"
 dependencies = ["lxml>=5.0", "rimsave"]
 
+[project.optional-dependencies]
+openai = ["openai>=1.40"]
+google = ["google-genai>=0.5"]
+llm = ["openai>=1.40", "google-genai>=0.5"]
+
 [project.scripts]
 rimportrait = "rimportrait.cli:main"
 

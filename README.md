@@ -47,10 +47,32 @@ rimportrait sample.rws --pawn NAME \
 
 # Without the trailing image-prompt instruction text
 rimportrait sample.rws --pawn NAME --no-instruction
+
+# Generate the image-gen prompt in-process via Google Gemini (default)
+export GEMINI_API_KEY=...
+uv run rimportrait sample.rws --pawn NAME --generate
+# (defaults: --provider google, --model gemini-flash-latest)
+
+# OpenAI alternative
+export OPENAI_API_KEY=...
+uv run rimportrait sample.rws --pawn NAME --generate --provider openai
 ```
 
 Output is a `[PORTRAIT SUBJECT]` or `[FAMILY PORTRAIT SUBJECT]` block
-followed by a prompt-instruction for a downstream image-prompt LLM.
+followed by a prompt-instruction for a downstream image-prompt LLM —
+unless `--generate` is set, in which case rimportrait calls the LLM
+itself and emits the returned one-paragraph image prompt instead of
+the block. The Google default (`gemini-flash-latest`) is a rolling
+alias that follows Google's current Flash release; the OpenAI default
+(`gpt-4o-mini`) is a version-pinned snapshot. Override either with
+`--model NAME`.
+
+The LLM dependencies are optional extras:
+```sh
+uv pip install -e 'packages/rimportrait[google]'   # google-genai SDK
+uv pip install -e 'packages/rimportrait[openai]'   # openai SDK
+uv pip install -e 'packages/rimportrait[llm]'      # both
+```
 
 ## Library use (rimsave)
 

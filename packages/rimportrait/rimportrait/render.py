@@ -87,6 +87,14 @@ FAMILY_PROMPT_INSTRUCTION = (
 )
 
 
+def instruction_for(kind: str) -> str:
+  if kind == "portrait":
+    return SINGLE_PROMPT_INSTRUCTION
+  if kind == "family":
+    return FAMILY_PROMPT_INSTRUCTION
+  raise ValueError(f"unknown render kind {kind!r}")
+
+
 # --- helpers ----------------------------------------------------------
 
 def _line(label: str, value: str | None) -> str | None:
