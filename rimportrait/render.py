@@ -461,6 +461,32 @@ def _race_xenotype(
   return None
 
 
+def _physical_state(p: PawnRecord) -> str | None:
+  """Compose a portrait-visible physical-state phrase.
+
+  Surfaces only the three needs that produce visible cues on a
+  portrait — hunger (gaunt cheeks), exhaustion (droopy eyes),
+  deathrest deprivation (sanguophage lethargy/pallor). Each tier is
+  triggered at thresholds matching RimWorld's UI: <0.50 = early
+  stage, <0.25 = severe. The line is omitted when no need is below
+  0.50.
+  """
+  bits: list[str] = []
+
+  def push(level: float | None, mild: str, severe: str) -> None:
+    if level is None or level >= 0.50:
+      return
+    bits.append(severe if level < 0.25 else mild)
+
+  push(p.food_need, "hungry", "starving / gaunt")
+  push(p.rest_need, "tired", "exhausted / droopy-eyed")
+  push(p.deathrest_need, "deathrest-tired",
+       "deathrest-deprived / pale and unsteady")
+  if not bits:
+    return None
+  return ", ".join(bits)
+
+
 def _personality(p: PawnRecord) -> str | None:
   if p.personality:
     return p.personality
@@ -636,6 +662,7 @@ def render_portrait(
           ", ".join(p.traits) if p.traits else None),
     _line("Personality/expression", _personality(p)),
     _line("Mood", p.mood),
+    _line("Physical state", _physical_state(p)),
     _line("Inspiration",
           _inspiration_value(p.inspiration, def_descriptions, def_labels)),
     _line("Chemical/drug state",
@@ -706,6 +733,7 @@ def _person_block(
           ", ".join(p.traits) if p.traits else None),
     _line("Personality/expression", _personality(p)),
     _line("Mood", p.mood),
+    _line("Physical state", _physical_state(p)),
     _line("Inspiration",
           _inspiration_value(p.inspiration, def_descriptions, def_labels)),
     _line("Chemical/drug state",

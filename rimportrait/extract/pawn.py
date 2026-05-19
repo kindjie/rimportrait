@@ -608,13 +608,19 @@ def _readable_backstory(v: str | None) -> str | None:
   return v
 
 
-def _mood(el: etree._Element) -> str | None:
-  level = el.findtext("needs/needs/li[def='Mood']/curLevel")
-  if not level:
+def _need_level(el: etree._Element, def_name: str) -> float | None:
+  raw = el.findtext(f"needs/needs/li[def='{def_name}']/curLevel")
+  if not raw:
     return None
   try:
-    v = float(level)
+    return float(raw)
   except ValueError:
+    return None
+
+
+def _mood(el: etree._Element) -> str | None:
+  v = _need_level(el, "Mood")
+  if v is None:
     return None
   if v < 0.25:
     return "broken / extremely low mood"
@@ -769,6 +775,9 @@ def pawn_from_element(
     creepjoiner=_creepjoiner(el),
     connections=_connections(el, save),
     bonded_animals=_bonded_animals(el, save),
+    food_need=_need_level(el, "Food"),
+    rest_need=_need_level(el, "Rest"),
+    deathrest_need=_need_level(el, "Deathrest"),
   )
 
 

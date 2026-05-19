@@ -749,6 +749,51 @@ def test_chemical_state_line_omitted_when_no_highs():
   assert "Chemical/drug state:" not in out
 
 
+def test_physical_state_surfaces_severe_needs_only():
+  pawn = PawnRecord(
+    pawn_id="1100",
+    name_full="Bad Day",
+    label="Bad",
+    role="colonist",
+    food_need=0.15,         # severe -> "starving / gaunt"
+    rest_need=0.40,         # mild   -> "tired"
+    deathrest_need=0.10,    # severe -> "deathrest-deprived..."
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert (
+    "Physical state: starving / gaunt, tired, "
+    "deathrest-deprived / pale and unsteady" in out
+  )
+
+
+def test_physical_state_omits_needs_at_or_above_half():
+  pawn = PawnRecord(
+    pawn_id="1101",
+    name_full="Fine",
+    label="Fine",
+    role="colonist",
+    food_need=0.95,
+    rest_need=0.50,         # threshold edge: not included
+    deathrest_need=None,
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Physical state:" not in out
+
+
+def test_physical_state_mild_food_only():
+  pawn = PawnRecord(
+    pawn_id="1102",
+    name_full="Snacky",
+    label="Snacky",
+    role="colonist",
+    food_need=0.35,
+    rest_need=0.80,
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Physical state: hungry" in out
+  assert "tired" not in out
+
+
 def test_inspiration_renders_def_name_when_no_mod_data():
   pawn = PawnRecord(
     pawn_id="500",

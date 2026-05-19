@@ -100,6 +100,11 @@
   set. Threaded into _hediffs so Belle's `BionicLeg` shows
   `(right leg)` and her 8 trailing `MissingBodyPart` hediffs read
   out as right femur / tibia / foot / and all 5 toes.
+- Physical state covered in test_render.py: Food/Rest/Deathrest
+  curLevels are surfaced when below 0.50, with a severe tier
+  below 0.25. Other needs (Beauty/Comfort/Indoors/RoomSize/Joy/
+  DrugDesire/Learning/Suppression/Chemical_*) are deliberately
+  skipped — they don't produce visible cues on a portrait.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

@@ -197,3 +197,9 @@ class PawnRecord:
   connections: tuple[str, ...] = ()
   # Animals bonded to this pawn via the ``Bond`` direct-relation.
   bonded_animals: tuple[BondedAnimal, ...] = ()
+  # Raw curLevel values (0..1) for the portrait-visible physical
+  # needs. None when the need isn't tracked on this pawn (e.g.
+  # Deathrest only exists on sanguophages).
+  food_need: float | None = None
+  rest_need: float | None = None
+  deathrest_need: float | None = None
