@@ -151,3 +151,9 @@ class PawnRecord:
   # save's control-group order. Empty when the pawn is not a
   # mechanitor or has no assigned mechs.
   commanded_mechs: tuple[str, ...] = ()
+  # Ability defs (psycasts + xenotype abilities + learned). Order is
+  # save order. Renderer threads these through mod-aware labels.
+  abilities: tuple[str, ...] = ()
+  # Current psyfocus in [0..1] when meaningful (only emitted when a
+  # psycaster hediff is present). None otherwise.
+  psyfocus: float | None = None

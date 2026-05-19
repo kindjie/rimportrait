@@ -57,6 +57,13 @@
   renderer groups them with a count×label breakdown sorted by count
   desc. The conventional `Mech_` prefix is stripped from humanised
   fallback labels.
+- Psycaster state covered in test_render.py: Abilities line lists
+  every def from abilities/abilities/li + learnedAbilities/li
+  threaded through the mod-aware label index. Psyfocus is gated on
+  a psylink-style hediff (PsychicAmplifier or Psylink*) so the line
+  only fires for actual psycasters; rendered as a band label plus
+  percentage (full / high / moderate / low / depleted at 0.95 /
+  0.75 / 0.50 / 0.25 thresholds).
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

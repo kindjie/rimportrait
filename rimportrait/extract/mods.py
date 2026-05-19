@@ -40,6 +40,7 @@ _INTERESTING_DEF_TYPES = (
   "BodyPartDef",
   "RoyalTitleDef",
   "InspirationDef",
+  "AbilityDef",
 )
 
 

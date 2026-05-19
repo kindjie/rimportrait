@@ -225,6 +225,48 @@ def _relations(el: etree._Element) -> tuple[Relation, ...]:
   return tuple(out)
 
 
+def _abilities(el: etree._Element) -> tuple[str, ...]:
+  """Read every ability def the pawn carries.
+
+  Psycasts and xenotype abilities both land in
+  ``abilities/abilities/li``; some Royalty/Anomaly content lands in
+  ``learnedAbilities/li`` instead. We surface both so the LLM has
+  the full action-shot palette and can decide what to lean into.
+  """
+  out: list[str] = []
+  for path in ("abilities/abilities/li", "learnedAbilities/li"):
+    for li in el.iterfind(path):
+      d = li.findtext("def")
+      if d:
+        out.append(d.strip())
+  return tuple(out)
+
+
+def _psyfocus_if_psycaster(el: etree._Element) -> float | None:
+  """Return psyfocus only when the pawn carries a psylink amp implant.
+
+  Every pawn has a psychicEntropy/currentPsyfocus value, but it's
+  only meaningful for actual psycasters. We gate emission on a
+  PsychicAmplifier or Psylink* hediff so non-psycasters don't pick
+  up a noisy psyfocus reading.
+  """
+  has_amp = False
+  for li in el.iterfind("healthTracker/hediffSet/hediffs/li"):
+    d = li.findtext("def") or ""
+    if d == "PsychicAmplifier" or "Psylink" in d:
+      has_amp = True
+      break
+  if not has_amp:
+    return None
+  raw = el.findtext("psychicEntropy/currentPsyfocus")
+  if not raw:
+    return None
+  try:
+    return float(raw)
+  except ValueError:
+    return None
+
+
 def _commanded_mechs(
   el: etree._Element, save: Save
 ) -> tuple[str, ...]:
@@ -582,6 +624,8 @@ def pawn_from_element(
     carried_infant=_carried_infant(el, save),
     inspiration=_inspiration(el),
     commanded_mechs=_commanded_mechs(el, save),
+    abilities=_abilities(el),
+    psyfocus=_psyfocus_if_psycaster(el),
   )
 
 

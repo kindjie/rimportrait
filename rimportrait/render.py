@@ -194,6 +194,43 @@ def _carrying_infant(p: PawnRecord) -> str | None:
   return f"{ci.pawn_id} (infant)"
 
 
+def _abilities_value(
+  abilities: tuple[str, ...],
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  if not abilities:
+    return None
+  parts = [
+    (labels.get(d) if labels else None) or humanise(d)
+    for d in abilities
+  ]
+  return ", ".join(parts)
+
+
+def _psyfocus_value(psyfocus: float | None) -> str | None:
+  """Render psyfocus as a band label, suppressed below 25%.
+
+  Thresholds chosen to align with RimWorld's UI psyfocus quartile
+  display: depleted/low/moderate/high/full. The label includes the
+  numeric percentage so the LLM can ground a 'how charged are they
+  looking' decision against the raw signal too.
+  """
+  if psyfocus is None:
+    return None
+  pct = int(round(psyfocus * 100))
+  if psyfocus >= 0.95:
+    band = "full"
+  elif psyfocus >= 0.75:
+    band = "high"
+  elif psyfocus >= 0.50:
+    band = "moderate"
+  elif psyfocus >= 0.25:
+    band = "low"
+  else:
+    band = "depleted"
+  return f"{band} ({pct}%)"
+
+
 def _commanded_mechs_value(
   mech_defs: tuple[str, ...],
   labels: dict[str, str] | None = None,
@@ -471,6 +508,8 @@ def render_portrait(
           or None),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
+    _line("Abilities", _abilities_value(p.abilities, def_labels)),
+    _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity", p.current_job),
     _line("Immediate setting", p.location),
     _line("Favorite color/accent",
@@ -529,6 +568,8 @@ def _person_block(
           or None),
     _line("Commanded mechs",
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
+    _line("Abilities", _abilities_value(p.abilities, def_labels)),
+    _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity before portrait", p.current_job),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),

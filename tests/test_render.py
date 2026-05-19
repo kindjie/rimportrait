@@ -316,6 +316,88 @@ def test_carrying_line_omitted_when_inventory_empty():
   assert "Carrying" not in out
 
 
+def test_abilities_line_renders_all_def_names_with_humanised_fallback():
+  pawn = PawnRecord(
+    pawn_id="800",
+    name_full="Caster",
+    label="Caster",
+    role="colonist",
+    abilities=("Bloodfeed", "Chunkskip", "WordOfSerenity"),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Abilities: bloodfeed, chunkskip, word of serenity" in out
+
+
+def test_abilities_line_threads_mod_labels():
+  pawn = PawnRecord(
+    pawn_id="801",
+    name_full="Caster",
+    label="Caster",
+    role="colonist",
+    abilities=("Chunkskip", "Neuroquake"),
+  )
+  labels = {"Chunkskip": "chunk skip", "Neuroquake": "neuroquake"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels
+  )
+  assert "Abilities: chunk skip, neuroquake" in out
+
+
+def test_abilities_line_omitted_when_empty():
+  pawn = PawnRecord(
+    pawn_id="802",
+    name_full="Plain",
+    label="Plain",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Abilities:" not in out
+
+
+def test_psyfocus_line_renders_band_and_percentage():
+  pawn = PawnRecord(
+    pawn_id="803",
+    name_full="Caster",
+    label="Caster",
+    role="colonist",
+    abilities=("Beckon",),
+    psyfocus=0.75,
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Psyfocus: high (75%)" in out
+
+
+def test_psyfocus_band_thresholds():
+  cases = [
+    (0.97, "full"),
+    (0.80, "high"),
+    (0.55, "moderate"),
+    (0.30, "low"),
+    (0.10, "depleted"),
+  ]
+  for value, band in cases:
+    pawn = PawnRecord(
+      pawn_id=f"850-{value}",
+      name_full="Caster", label="Caster", role="colonist",
+      psyfocus=value,
+    )
+    out = render_portrait(pawn, None, include_instruction=False)
+    assert f"Psyfocus: {band}" in out, (value, band, out)
+
+
+def test_psyfocus_omitted_when_none():
+  pawn = PawnRecord(
+    pawn_id="804",
+    name_full="No Cast",
+    label="No Cast",
+    role="colonist",
+    abilities=("Bloodfeed",),  # xenotype ability, not a psycast
+    psyfocus=None,
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Psyfocus:" not in out
+
+
 def test_commanded_mechs_renders_total_plus_sorted_breakdown():
   pawn = PawnRecord(
     pawn_id="700",
