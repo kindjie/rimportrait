@@ -147,3 +147,7 @@ class PawnRecord:
   royal_titles: tuple[RoyalTitle, ...] = ()
   carried_infant: CarriedInfant | None = None
   inspiration: str | None = None
+  # Mech ThingDef names this pawn commands as a mechanitor, in the
+  # save's control-group order. Empty when the pawn is not a
+  # mechanitor or has no assigned mechs.
+  commanded_mechs: tuple[str, ...] = ()

@@ -225,6 +225,33 @@ def _relations(el: etree._Element) -> tuple[Relation, ...]:
   return tuple(out)
 
 
+def _commanded_mechs(
+  el: etree._Element, save: Save
+) -> tuple[str, ...]:
+  """Resolve commanded mech refs to their ThingDef names.
+
+  RimWorld serialises ``mechanitor/controlGroups/li/assignedMechs/li``
+  as ``Thing_*`` references; we strip the prefix and look up each
+  pawn's <def>. Pawns missing from the index are skipped.
+  """
+  mech = el.find("mechanitor")
+  if mech is None or mech.attrib.get("IsNull") == "True":
+    return ()
+  out: list[str] = []
+  for li in mech.iterfind("controlGroups/li/assignedMechs/li"):
+    ref = li.findtext("pawn") or ""
+    pid = _strip(ref.strip())
+    if not pid:
+      continue
+    mech_el = save.pawns_by_id.get(pid)
+    if mech_el is None:
+      continue
+    d = mech_el.findtext("def")
+    if d:
+      out.append(d)
+  return tuple(out)
+
+
 def _inspiration(el: etree._Element) -> str | None:
   cur = el.find("mindState/inspirationHandler/curState")
   if cur is None or cur.attrib.get("IsNull") == "True":
@@ -554,6 +581,7 @@ def pawn_from_element(
     royal_titles=_royal_titles(el, save),
     carried_infant=_carried_infant(el, save),
     inspiration=_inspiration(el),
+    commanded_mechs=_commanded_mechs(el, save),
   )
 
 

@@ -52,6 +52,11 @@
   `describe_hediffs` excludes them so they appear on a dedicated
   "Chemical/drug state" line near Inspiration rather than mixing
   with permanent body changes.
+- Mechanitor entourage covered in test_render.py: extractor follows
+  mechanitor/controlGroups/li/assignedMechs to mech ThingDef names,
+  renderer groups them with a count×label breakdown sorted by count
+  desc. The conventional `Mech_` prefix is stripped from humanised
+  fallback labels.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

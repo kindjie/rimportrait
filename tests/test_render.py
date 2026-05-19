@@ -316,6 +316,56 @@ def test_carrying_line_omitted_when_inventory_empty():
   assert "Carrying" not in out
 
 
+def test_commanded_mechs_renders_total_plus_sorted_breakdown():
+  pawn = PawnRecord(
+    pawn_id="700",
+    name_full="Mecha Master",
+    label="Mecha",
+    role="colonist",
+    commanded_mechs=(
+      "Mech_Lifter",
+      "Mech_Cleansweeper",
+      "Mech_Cleansweeper",
+      "Mech_Cleansweeper",
+      "Mech_Lifter",
+      "Mech_Constructoid",
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # Sort: highest count first, then alphabetical. Singletons have
+  # no "× 1" suffix to keep the line compact.
+  assert (
+    "Commanded mechs: 6 — cleansweeper × 3, lifter × 2, constructoid"
+    in out
+  )
+
+
+def test_commanded_mechs_uses_mod_labels_when_provided():
+  pawn = PawnRecord(
+    pawn_id="701",
+    name_full="Mecha Master",
+    label="Mecha",
+    role="colonist",
+    commanded_mechs=("Mech_Lifter", "Mech_Lifter"),
+  )
+  labels = {"Mech_Lifter": "lifter mech"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels
+  )
+  assert "Commanded mechs: 2 — lifter mech × 2" in out
+
+
+def test_commanded_mechs_omitted_when_pawn_commands_none():
+  pawn = PawnRecord(
+    pawn_id="702",
+    name_full="Plain",
+    label="Plain",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Commanded mechs:" not in out
+
+
 def test_chemical_state_line_renders_drug_highs_only():
   pawn = PawnRecord(
     pawn_id="600",

@@ -194,6 +194,36 @@ def _carrying_infant(p: PawnRecord) -> str | None:
   return f"{ci.pawn_id} (infant)"
 
 
+def _commanded_mechs_value(
+  mech_defs: tuple[str, ...],
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  """Compact entourage summary: total count + per-def tallies.
+
+  Mechs commanded by a mechanitor are a strong silhouette signal -
+  they appear at the pawn's side in portraits. We surface the total
+  count plus a sorted (count desc, then label asc) per-mech-def
+  breakdown using mod-aware labels.
+  """
+  if not mech_defs:
+    return None
+  counts: dict[str, int] = {}
+  for d in mech_defs:
+    counts[d] = counts.get(d, 0) + 1
+  by_count = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+  parts: list[str] = []
+  for def_name, n in by_count:
+    # Strip the conventional Mech_ prefix so the breakdown reads
+    # "cleansweeper × 3" rather than "mech cleansweeper × 3".
+    label = (
+      (labels.get(def_name) if labels else None)
+      or humanise(def_name, ("Mech_",))
+    )
+    parts.append(f"{label} × {n}" if n > 1 else label)
+  total = len(mech_defs)
+  return f"{total} — " + ", ".join(parts)
+
+
 def _inspiration_value(
   inspiration: str | None,
   descriptions: dict[str, str] | None = None,
@@ -439,6 +469,8 @@ def render_portrait(
     _line("Chemical/drug state",
           ", ".join(describe_chemical_state(p.hediffs, def_labels))
           or None),
+    _line("Commanded mechs",
+          _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Pose/activity", p.current_job),
     _line("Immediate setting", p.location),
     _line("Favorite color/accent",
@@ -495,6 +527,8 @@ def _person_block(
     _line("Chemical/drug state",
           ", ".join(describe_chemical_state(p.hediffs, def_labels))
           or None),
+    _line("Commanded mechs",
+          _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Pose/activity before portrait", p.current_job),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),
