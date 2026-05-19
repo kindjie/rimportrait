@@ -89,7 +89,9 @@ def test_portrait_contains_identity():
 
 def test_portrait_includes_hair_style_and_color():
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
-  assert "Hair style: SD Zayne (thick side-swept voluminous hair)" in out
+  # Hair label + texture path are emitted as game data; the curated
+  # visual phrase has been retired per the data-first principle.
+  assert "Hair style: SD Zayne" in out
   assert "Hair texture path: Hairs/fluffySidePartS" in out
   assert "very dark charcoal / near-black" in out
 
@@ -98,7 +100,8 @@ def test_portrait_includes_gradient_hair():
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
   assert "Hair gradient: enabled" in out
   assert "bright cyan / aqua / turquoise" in out
-  assert "mid-to-tip gradient region" in out
+  # Gradient mask is emitted as the raw RimWorld texture path.
+  assert "GradientHair/MaskBMidHigh" in out
 
 
 def test_portrait_includes_beard_and_tattoos():
@@ -160,7 +163,9 @@ def test_portrait_wealth_tier_is_descriptive_not_numeric():
 
 def test_portrait_favorite_color_translated():
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
-  assert "light purple / pale violet / muted lavender" in out
+  # ColorDef -> RGBA -> Lab-nearest palette phrase. LightPurple's RGBA
+  # falls nearest to the curated palette's "muted violet" entry.
+  assert "Favorite color/accent: muted violet" in out
 
 
 def test_portrait_apparel_section_present():
@@ -223,18 +228,19 @@ def test_carrying_line_lists_inventory_items_distinct_from_equipped():
     ),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  # Wielded weapon is on its own labeled line; pack items appear under
-  # the Carrying line; the two must not mix.
-  assert "Wielded weapon: modern assault rifle" in out
+  # Wielded weapon is on its own labeled line (humanised def name,
+  # since no labels dict is threaded in this test); pack items appear
+  # under the Carrying line; the two must not mix.
+  assert "Wielded weapon: assault rifle" in out
   assert (
-    "Carrying (pack/inventory): 3× simple meal, "
-    "12× high-explosive mortar shell"
+    "Carrying (pack/inventory): 3× meal simple, "
+    "12× shell high explosive"
   ) in out
   weapon_line = [
     ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
   ][0]
-  assert "simple meal" not in weapon_line
-  assert "mortar shell" not in weapon_line
+  assert "meal simple" not in weapon_line
+  assert "shell high explosive" not in weapon_line
 
 
 def test_gear_lines_split_armor_utility_and_weapon():
@@ -264,18 +270,20 @@ def test_gear_lines_split_armor_utility_and_weapon():
   weapon_line = [
     ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
   ][0]
-  # Armor/clothing: shirt + power armor + helmet + cape.
-  assert "buttoned collared shirt" in armor_line
-  assert "heavy powered combat armor" in armor_line
-  assert "prestige marine helmet" in armor_line
+  # Armor/clothing bucket: humanised def names (no labels threaded
+  # in this synthetic test; downstream LLM does the visual step).
+  assert "collar shirt" in armor_line
+  assert "power armor" in armor_line
+  assert "armor marine helmet prestige" in armor_line
   assert "cape" in armor_line
-  # Utility: bandolier, gunlink, baby carrier (incl. modded SBC_*).
+  # Utility bucket: belt/bandolier/carrier/gunlink patterns matched
+  # against def name, including modded SBC_BabyCarrier.
   assert "bandolier" in utility_line
-  assert "targeting visor" in utility_line
+  assert "gunlink" in utility_line
   assert "baby carrier" in utility_line
   # No cross-contamination between buckets.
   assert "bandolier" not in armor_line
-  assert "collared shirt" not in utility_line
+  assert "collar shirt" not in utility_line
   assert "charge lance" in weapon_line
   assert "charge lance" not in armor_line
   assert "charge lance" not in utility_line
@@ -316,9 +324,10 @@ def test_portrait_apparel_qualifier_omitted_when_no_signal():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   # No qualifier means no bracketed segment on the bullet line and no
-  # parenthesised qualifier on the inline summary item.
-  assert "- basic shirt: plain practical shirt" in out
-  assert "plain practical shirt (" not in out
+  # parenthesised qualifier on the inline summary item. Without
+  # mod-aware labels the def name humanises to "basic shirt".
+  assert "- basic shirt: basic shirt" in out
+  assert "basic shirt (" not in out
 
 
 def test_portrait_omits_missing_fields():
@@ -352,8 +361,25 @@ def test_visible_gene_emerges_in_block():
     genes=(Gene("Fangs"), Gene("Beauty_Beautiful")),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  assert "visible fangs" in out
-  assert "strikingly beautiful features" in out
+  # Without mod-aware labels, genes humanise from their def names;
+  # the downstream LLM does the visual translation step.
+  assert "fangs" in out
+  assert "beauty beautiful" in out
+
+
+def test_genes_use_mod_aware_label_when_provided():
+  pawn = PawnRecord(
+    pawn_id="2b",
+    name_full="Sam Roe",
+    label="Sam",
+    role="colonist",
+    genes=(Gene("Fangs"), Gene("Beauty_Beautiful")),
+  )
+  labels = {"Fangs": "fangs", "Beauty_Beautiful": "beautiful"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels
+  )
+  assert "Visible genes/body traits: fangs, beautiful" in out
 
 
 def test_visible_hediff_emerges_archotech():
@@ -364,11 +390,12 @@ def test_visible_hediff_emerges_archotech():
     role="colonist",
     hediffs=(
       Hediff("ArchotechEye", body_part="left eye"),
-      Hediff("ImmunityToFlu"),  # ignored pattern
+      Hediff("ImmunityToFlu"),  # ignored pattern (skip-list)
     ),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  assert "luminous archotech eye" in out
+  # Humanised def name; skip-list still drops Immunity* hediffs.
+  assert "archotech eye (left eye)" in out
   assert "ImmunityToFlu" not in out
 
 
@@ -479,7 +506,7 @@ def test_gradient_line_omitted_when_mod_present_but_disabled():
   assert "Hair gradient:" not in out
 
 
-def test_unknown_xenotype_emits_extrapolation_hint():
+def test_unknown_xenotype_emits_def_name_only_when_no_mod_data():
   pawn = PawnRecord(
     pawn_id="14",
     name_full="Pat Roe",
@@ -488,8 +515,30 @@ def test_unknown_xenotype_emits_extrapolation_hint():
     xenotype="ModdedXenotype",
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  assert "ModdedXenotype" in out
-  assert "custom xenotype" in out
+  # No labels/descriptions threaded: just the def name. The previous
+  # "custom xenotype" curated hint was retired with the curated tables.
+  assert "Race/xenotype: ModdedXenotype" in out
+
+
+def test_xenotype_renders_mod_aware_description_when_provided():
+  pawn = PawnRecord(
+    pawn_id="14b",
+    name_full="Pat Roe",
+    label="Pat",
+    role="colonist",
+    xenotype="Sanguophage",
+  )
+  descriptions = {
+    "Sanguophage": "an ageless transhuman with vampiric traits",
+  }
+  out = render_portrait(
+    pawn, None, include_instruction=False,
+    def_descriptions=descriptions,
+  )
+  assert (
+    "Race/xenotype: Sanguophage - "
+    "an ageless transhuman with vampiric traits"
+  ) in out
 
 
 def test_family_empty_members_still_emits_envelope():

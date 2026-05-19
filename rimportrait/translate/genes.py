@@ -1,12 +1,9 @@
-"""Gene def -> visible-anatomy or attitude/bearing description.
+"""Gene def -> label phrase.
 
-Per spec: three buckets.
-  VISIBLE_ANATOMY -> contributes a visible feature to the portrait.
-  ATTITUDE_BEARING -> influences expression, posture, or mood.
-  IGNORE -> internal mechanics; never surface in prompts.
-
-Unknown genes default to IGNORE to avoid polluting prompts with raw
-def names. Add to the tables as new xenotypes/mods appear in saves.
+Per the data-first principle, all genes the pawn carries are surfaced
+with their mod-aware label (humanised-slug fallback) so the downstream
+LLM can decide what's visually relevant. A small skip-list filters
+obviously-non-visual mechanical genes to bound prompt context size.
 """
 
 from __future__ import annotations
@@ -14,84 +11,33 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..records import Gene
+from ._common import label_for
 
 
-VISIBLE_ANATOMY: dict[str, str | None] = {
-  # Eye / face / mouth
-  "Fangs": "visible fangs",
-  "FangsThin": "visible thin fangs",
-  "FangsLarge": "large visible fangs",
-  "Eyes_Glowing": "faintly glowing eyes",
-  "Eyes_Aggressive": "intense aggressive eyes",
-  # Skin / fur
-  "FurryBody": "shaggy full-body fur",
-  "FurryBodyThin": "light body fur",
-  "Skin_PaleGrayWhite": "pale grayish-white skin",
-  "Skin_RedFire": "fire-touched reddish skin",
-  "Skin_DarkGray": "dark gray skin",
-  # Cranial / horns
-  "Horns_Pointy": "pointed horns",
-  "Horns_Curled": "curled horns",
-  "Headbone_CenterHorn": "single central head horn",
-  "Headbone_DoubleHorn": "twin head horns",
-  # Limbs / appendages
-  "Tail_Furry": "furry tail",
-  "Tail_Smooth": "smooth tail",
-  "Tail_Reptilian": "reptilian tail",
-  "Ears_Pointed": "pointed ears",
-  "Ears_Floppy": "floppy animal ears",
-  "Ears_Cat": "cat-like ears",
-  # Build
-  "Body_Standard": None,  # baseline, no visible cue
-  "Body_Hulk": "hulking heavy build",
-  "Body_Thin": "thin wiry build",
-  "Body_Fat": "heavy soft build",
-}
+# Substring patterns that mark a gene as purely mechanical (no
+# visual or bearing implication). Skip-list shape, not allow-list, so
+# modded genes aren't silently dropped from prompts.
+_IGNORED_PATTERNS: tuple[str, ...] = (
+  "Immunity",
+  "ToxResist",
+  "ToxResistance",
+  "ChemicalDependency",
+  "Sleep_",
+  "Hemogenic",  # mechanic; sanguophage visuals come from xenotype
+)
 
 
-ATTITUDE_BEARING: dict[str, str] = {
-  "Ageless": "ageless presence with no signs of aging",
-  "Beauty_VeryUgly": "rough harshly-featured face",
-  "Beauty_Ugly": "plain rough-featured face",
-  "Beauty_Pretty": "attractive features",
-  "Beauty_Beautiful": "strikingly beautiful features",
-  "AggressionH": "aggressive bearing, simmering hostility",
-  "AggressionN": "guarded restrained demeanour",
-  "Robust": "robust resilient build",
-  "MoveSpeed_Quick": "quick alert stance",
-  "MoveSpeed_VeryQuick": "lean fast-moving stance",
-  "MeleeDamage_Strong": "strong heavy-shouldered build",
-  "SocialAbility_VeryAble": "confident socially commanding presence",
-  "DarkVision": "dilated low-light-adapted eyes",
-}
+def _is_ignored(def_name: str) -> bool:
+  return any(p in def_name for p in _IGNORED_PATTERNS)
 
 
-def _is_visible(def_name: str) -> bool:
-  return def_name in VISIBLE_ANATOMY
-
-
-def _is_bearing(def_name: str) -> bool:
-  return def_name in ATTITUDE_BEARING
-
-
-def visible_features(genes: Iterable[Gene]) -> list[str]:
+def describe_genes(
+  genes: Iterable[Gene],
+  labels: dict[str, str] | None = None,
+) -> list[str]:
   out: list[str] = []
   for g in genes:
-    if _is_visible(g.def_name):
-      desc = VISIBLE_ANATOMY[g.def_name]
-      if desc:
-        out.append(desc)
+    if _is_ignored(g.def_name):
+      continue
+    out.append(g.label or label_for(g.def_name, labels))
   return out
-
-
-def attitude_features(genes: Iterable[Gene]) -> list[str]:
-  out: list[str] = []
-  for g in genes:
-    if _is_bearing(g.def_name):
-      out.append(ATTITUDE_BEARING[g.def_name])
-  return out
-
-
-def describe_genes(genes: Iterable[Gene]) -> list[str]:
-  """Combined visible-only output for the 'Visible genes/body traits' line."""
-  return visible_features(genes) + attitude_features(genes)

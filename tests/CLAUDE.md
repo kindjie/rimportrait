@@ -16,6 +16,13 @@
   priorities verbatim, per the project's data-first principle. No
   curated translation tables — the downstream LLM does the visual
   translation step.
+- Curated visual translation tables retired across translate modules
+  (apparel, weapons, inventory, genes, hediffs, xenotype, favorite
+  color, hair). Each translate function now accepts an optional
+  ``labels``/``descriptions`` dict (sourced from the mod-aware def
+  index) and falls back through `mod description -> mod label ->
+  humanised slug`. Tests assert both the no-labels (humanised) path
+  and the labels-provided path where relevant.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

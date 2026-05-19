@@ -1,9 +1,10 @@
-"""Hediff def -> visible body change description.
+"""Hediff def -> label phrase.
 
 A hediff is anything the game models as a 'health diff' on a pawn:
-implants, injuries, missing parts, diseases, tolerances. Only those
-that produce a visible silhouette or face change should reach the
-portrait prompt.
+implants, injuries, missing parts, diseases, tolerances. Per the
+data-first principle we surface the mod-aware label of every hediff
+the pawn carries; a skip-list excludes obviously-non-visual mechanical
+states (immunities, tolerances, withdrawals) to bound prompt context.
 """
 
 from __future__ import annotations
@@ -11,88 +12,41 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..records import Hediff
+from ._common import label_for
 
 
-# Exact-match descriptive table for well-known visible hediffs.
-VISIBLE: dict[str, str] = {
-  "MissingBodyPart": "missing limb or body part",
-  "BionicEye": "smooth metallic bionic eye",
-  "ArchotechEye": "luminous archotech eye with subtle inner glow",
-  "BionicArm": "sleek bionic arm",
-  "ArchotechArm": "ornate archotech arm with subtle inner glow",
-  "BionicLeg": "sleek bionic leg",
-  "ArchotechLeg": "ornate archotech leg with subtle inner glow",
-  "BionicSpine": "augmented spine bearing, upright posture",
-  "BionicJaw": "metallic prosthetic jaw",
-  "BionicEar": "metallic prosthetic ear",
-  "PowerClaw": "heavy industrial power-claw hand",
-  "DrillArm": "industrial drill arm",
-  "FieldHand": "bulky field-work prosthetic hand",
-  "ElbowSpike": "elbow spike",
-  "KneeSpike": "knee spike",
-  "GhoulPlating": "rough ghoul plating",
-  "Scarring": "visible scar",
-  "Burn": "visible burn scar",
-  "Crush": "visible crush injury",
-  "Crack": "visible crack injury",
-  "Cut": "visible cut",
-  "Gunshot": "visible gunshot scar",
-  "Stab": "visible stab scar",
-  "Bite": "visible bite scar",
-  "Frostbite": "visible frostbite damage",
-}
+_HEDIFF_PREFIXES: tuple[str, ...] = ("Hediff_",)
 
 
-# Substring patterns that mark a hediff as visible. Catches mod variants
-# and DLC additions without listing every def.
-_VISIBLE_PATTERNS: tuple[str, ...] = (
-  "Bionic", "Archotech", "Prosthetic", "PowerClaw", "DrillArm",
-  "Spike", "Plating", "Carapace", "Talon", "Tentacle",
-)
-
-
+# Skip-list of obviously-mechanical hediff patterns. Substring match
+# so mod variants are caught alongside vanilla; allow-list shape was
+# deliberately retired so modded body changes aren't dropped silently.
 _IGNORED_PATTERNS: tuple[str, ...] = (
-  "Immunity", "Tolerance", "Dependency", "Resistance",
-  "Hangover", "Catharsis", "Withdrawal", "Pregnant",
+  "Immunity",
+  "Tolerance",
+  "Dependency",
+  "Resistance",
+  "Hangover",
+  "Catharsis",
+  "Withdrawal",
+  "Pregnant",
 )
 
 
-def _is_visible_pattern(def_name: str) -> bool:
-  return any(p in def_name for p in _VISIBLE_PATTERNS)
-
-
-def _is_ignored_pattern(def_name: str) -> bool:
+def _is_ignored(def_name: str) -> bool:
   return any(p in def_name for p in _IGNORED_PATTERNS)
 
 
-def describe_hediffs(hediffs: Iterable[Hediff]) -> list[str]:
+def describe_hediffs(
+  hediffs: Iterable[Hediff],
+  labels: dict[str, str] | None = None,
+) -> list[str]:
   out: list[str] = []
   for h in hediffs:
-    if _is_ignored_pattern(h.def_name):
+    if _is_ignored(h.def_name):
       continue
-    if h.def_name in VISIBLE:
-      desc = VISIBLE[h.def_name]
-      if h.body_part:
-        desc = f"{desc} ({h.body_part})"
-      out.append(desc)
-      continue
-    if _is_visible_pattern(h.def_name):
-      label = h.label or _humanise(h.def_name)
-      if h.body_part:
-        label = f"{label} ({h.body_part})"
-      out.append(label)
+    base = h.label or label_for(h.def_name, labels, _HEDIFF_PREFIXES)
+    if h.body_part:
+      base = f"{base} ({h.body_part})"
+    out.append(base)
   return out
-
-
-def _humanise(def_name: str) -> str:
-  # Strip common prefixes, split CamelCase into lowercase words.
-  s = def_name
-  for prefix in ("Hediff_", "BodyPart_"):
-    if s.startswith(prefix):
-      s = s[len(prefix):]
-  acc: list[str] = []
-  for i, ch in enumerate(s):
-    if i > 0 and ch.isupper() and not s[i - 1].isupper():
-      acc.append(" ")
-    acc.append(ch)
-  return "".join(acc).lower()

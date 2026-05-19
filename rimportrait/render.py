@@ -24,11 +24,13 @@ from .translate.apparel import (
   describe_apparel,
   describe_apparel_item,
   is_utility_apparel,
+  long_form_apparel_phrase,
   qualifier_for_apparel,
 )
 from .translate.favorite_color import describe_favorite_color
 from .translate.genes import describe_genes
 from .translate.hair import describe_gradient_mask, describe_hair_style
+from .translate._common import humanise
 from .translate.hediffs import describe_hediffs
 from .translate.inventory import describe_inventory
 from .translate.weapons import describe_weapon, qualifier_for_weapon
@@ -116,19 +118,25 @@ def _gradient_value(gh: GradientHair | None) -> str | None:
   return "; ".join(parts)
 
 
-def _apparel_phrase(it: ApparelItem) -> str:
-  base = describe_apparel_item(it)
+def _apparel_phrase(
+  it: ApparelItem, labels: dict[str, str] | None = None
+) -> str:
+  base = describe_apparel_item(it, labels)
   qual = qualifier_for_apparel(it)
   return f"{base} ({qual})" if qual else base
 
 
-def _weapon_phrase(w: Weapon) -> str:
-  base = describe_weapon(w)
+def _weapon_phrase(
+  w: Weapon, labels: dict[str, str] | None = None
+) -> str:
+  base = describe_weapon(w, labels)
   qual = qualifier_for_weapon(w)
   return f"{base} ({qual})" if qual else base
 
 
-def _gear_lines(p: PawnRecord) -> list[tuple[str, str]]:
+def _gear_lines(
+  p: PawnRecord, labels: dict[str, str] | None = None
+) -> list[tuple[str, str]]:
   """Split worn gear into three prominence buckets.
 
   Returns (label, value) pairs for: armor/clothing layers, belt/utility
@@ -141,8 +149,8 @@ def _gear_lines(p: PawnRecord) -> list[tuple[str, str]]:
   utility: list[str] = []
   for it in p.apparel:
     target = utility if is_utility_apparel(it.def_name) else armor
-    target.append(_apparel_phrase(it))
-  weapons = [_weapon_phrase(w) for w in p.equipment]
+    target.append(_apparel_phrase(it, labels))
+  weapons = [_weapon_phrase(w, labels) for w in p.equipment]
   out: list[tuple[str, str]] = []
   if armor:
     out.append(("Worn armor/clothing", ", ".join(armor)))
@@ -153,16 +161,27 @@ def _gear_lines(p: PawnRecord) -> list[tuple[str, str]]:
   return out
 
 
-def _carrying_summary(p: PawnRecord) -> str | None:
-  items = describe_inventory(p.inventory)
+def _carrying_summary(
+  p: PawnRecord, labels: dict[str, str] | None = None
+) -> str | None:
+  items = describe_inventory(p.inventory, labels)
   if not items:
     return None
   return ", ".join(items)
 
 
-def _race_xenotype(p: PawnRecord) -> str | None:
+def _race_xenotype(
+  p: PawnRecord,
+  descriptions: dict[str, str] | None = None,
+  labels: dict[str, str] | None = None,
+) -> str | None:
   if p.xenotype:
-    return f"{p.xenotype} - {describe_xenotype(p.xenotype)}"
+    desc = describe_xenotype(p.xenotype, descriptions, labels)
+    # Suppress the redundant dash form when the description is just
+    # the humanised def name; emit only the def name in that case.
+    if desc and desc != humanise(p.xenotype):
+      return f"{p.xenotype} - {desc}"
+    return p.xenotype
   if p.race:
     return p.race
   return None
@@ -296,23 +315,18 @@ def _apparel_section(
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
 ) -> list[str]:
-  rows = describe_apparel(items)
   items_list = list(items)
+  rows = describe_apparel(items_list, def_labels)
   if not rows:
     return []
   out = ["Apparel visual descriptions:"]
-  for item, (label, summary) in zip(items_list, rows):
-    description = (
-      def_descriptions.get(item.def_name) if def_descriptions else None
-    )
-    nicer_label = (
-      def_labels.get(item.def_name) if def_labels else None
-    ) or label
+  for item, (label, _summary) in zip(items_list, rows):
+    body = long_form_apparel_phrase(item, def_descriptions, def_labels)
     qual = qualifier_for_apparel(item)
-    head = f"- {nicer_label}"
+    head = f"- {label}"
     if qual:
       head += f" [{qual}]"
-    out.append(f"{head}: {description or summary}")
+    out.append(f"{head}: {body}")
   return out
 
 
@@ -330,7 +344,8 @@ def render_portrait(
   for ln in (
     _line("Name", name),
     _line("Role", p.role.capitalize() if p.role else None),
-    _line("Race/xenotype", _race_xenotype(p)),
+    _line("Race/xenotype",
+          _race_xenotype(p, def_descriptions, def_labels)),
     _line("Gender", p.gender),
     _line("Age", _age_str(p.bio_age, p.chrono_age)),
   ):
@@ -350,11 +365,13 @@ def render_portrait(
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),
     _line("Visible genes/body traits",
-          ", ".join(describe_genes(p.genes)) or None),
+          ", ".join(describe_genes(p.genes, def_labels)) or None),
     _line("Visible implants/injuries/body changes",
-          ", ".join(describe_hediffs(p.hediffs)) or None),
-    *(_line(label, value) for label, value in _gear_lines(p)),
-    _line("Carrying (pack/inventory)", _carrying_summary(p)),
+          ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
+    *(_line(label, value)
+      for label, value in _gear_lines(p, def_labels)),
+    _line("Carrying (pack/inventory)",
+          _carrying_summary(p, def_labels)),
   ):
     if ln:
       lines.append(ln)
@@ -370,14 +387,20 @@ def render_portrait(
 
 # --- family-portrait block --------------------------------------------
 
-def _person_block(p: PawnRecord, relation_to_focus: str) -> list[str]:
+def _person_block(
+  p: PawnRecord,
+  relation_to_focus: str,
+  def_descriptions: dict[str, str] | None = None,
+  def_labels: dict[str, str] | None = None,
+) -> list[str]:
   lines: list[str] = ["[PERSON]"]
   name = p.label or p.nickname or p.name_full
   for ln in (
     _line("Name", name),
     _line("Relation to focus pawn", relation_to_focus),
     _line("Role", p.role.capitalize() if p.role else None),
-    _line("Race/xenotype", _race_xenotype(p)),
+    _line("Race/xenotype",
+          _race_xenotype(p, def_descriptions, def_labels)),
     _line("Gender", p.gender),
     _line("Age", _age_str(p.bio_age, p.chrono_age)),
     _line("Head and face", _compact_head_and_face(p)),
@@ -389,11 +412,13 @@ def _person_block(p: PawnRecord, relation_to_focus: str) -> list[str]:
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),
     _line("Visible genes/body traits",
-          ", ".join(describe_genes(p.genes)) or None),
+          ", ".join(describe_genes(p.genes, def_labels)) or None),
     _line("Visible implants/injuries/body changes",
-          ", ".join(describe_hediffs(p.hediffs)) or None),
-    *(_line(label, value) for label, value in _gear_lines(p)),
-    _line("Carrying (pack/inventory)", _carrying_summary(p)),
+          ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
+    *(_line(label, value)
+      for label, value in _gear_lines(p, def_labels)),
+    _line("Carrying (pack/inventory)",
+          _carrying_summary(p, def_labels)),
   ):
     if ln:
       lines.append(ln)
@@ -442,7 +467,9 @@ def render_family(
       lines.append(f"- {rel.def_name}: {other_name}")
     lines.append("Family members:")
     for rel, other in members:
-      lines.extend(_person_block(other, rel.def_name))
+      lines.extend(_person_block(
+        other, rel.def_name, def_descriptions, def_labels
+      ))
   lines.append("[/FAMILY PORTRAIT SUBJECT]")
   block = "\n".join(lines)
   if include_instruction:
