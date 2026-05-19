@@ -1,24 +1,16 @@
-# rimportrait
+# rimportrait + rimsave
 
-Parse RimWorld `.rws` saves into structured prompt-context blocks for AI
-image generation. Translates game-specific concepts (xenotypes, defs,
-RGBA colors, GradientHair, ideologies, hediffs) into visual descriptions
-so an image model can produce realistic gritty RimWorld sci-fi
-portraits without knowing the game.
+A uv workspace with two Python packages built around RimWorld save
+files:
 
-Replaces an in-game RimTalk + Scriban templating workflow with an
-out-of-game Python script.
-
-## Repo layout
-
-This is a uv workspace with two packages:
-
-- **`packages/rimsave/`** — pure save-parsing library. Reads `.rws`
-  XML and a mod set, returns typed records (`PawnRecord`,
-  `IdeoRecord`, `MapContext`, …). No image-prompt opinion.
-- **`packages/rimportrait/`** — image-prompt renderer. Depends on
-  `rimsave`; turns its records into `[PORTRAIT SUBJECT]` blocks. Owns
-  the `rimportrait` CLI.
+- **`packages/rimsave/`** — save-parsing **library**. Reads `.rws`
+  XML and the user's mod set, returns typed records (`PawnRecord`,
+  `IdeoRecord`, `MapContext`, …). No image-prompt opinion; usable on
+  its own.
+- **`packages/rimportrait/`** — image-prompt **renderer + CLI**.
+  Depends on `rimsave`; turns its records into `[PORTRAIT SUBJECT]`
+  blocks for downstream image-generation LLMs. Replaces an in-game
+  RimTalk + Scriban templating workflow.
 
 API contracts are not stable until v1.0.0 — record shapes and exports
 can change in minor versions.
@@ -59,6 +51,29 @@ rimportrait sample.rws --pawn NAME --no-instruction
 
 Output is a `[PORTRAIT SUBJECT]` or `[FAMILY PORTRAIT SUBJECT]` block
 followed by a prompt-instruction for a downstream image-prompt LLM.
+
+## Library use (rimsave)
+
+`rimsave` is usable standalone — no rendering, no CLI, just typed
+records from a `.rws` file:
+
+```python
+from rimsave import (
+  load_save, iter_colonists, find_pawn, map_context_for,
+  autodetect_mod_paths, build_def_index_from_save,
+  index_to_labels, index_to_descriptions,
+)
+
+save = load_save("colony.rws")
+defs = build_def_index_from_save(save, autodetect_mod_paths())
+labels = index_to_labels(defs)
+for pawn in iter_colonists(save, defs):
+  print(pawn.label, pawn.role, [labels.get(g.def_name, g.def_name)
+                                for g in pawn.genes])
+```
+
+See `packages/rimsave/rimsave/__init__.py` for the full surface
+(record types live in `rimsave.records`).
 
 ## Rendered fields
 
@@ -125,10 +140,12 @@ omitted cleanly when absent.
 
 ## Mod-aware def coverage
 
-The save's own `<meta><modIds>`/`<modSteamIds>`/`<modNames>` is
-parsed to learn the active mod set and load order, then every mod's
-`Defs/` is walked for descriptions, labels, categories, and texture
-paths. Covered def types include apparel, weapons, hair, genes,
+The mod-aware def index is implemented by `rimsave` and exposed via
+`build_def_index_from_save` / `index_to_labels` /
+`index_to_descriptions` / `index_to_categories`. The save's own
+`<meta><modIds>`/`<modSteamIds>`/`<modNames>` is parsed to learn the
+active mod set and load order, then every mod's `Defs/` is walked for
+descriptions, labels, categories, and texture paths. Covered def types include apparel, weapons, hair, genes,
 hediffs, xenotypes, ideologies, inspirations, abilities, mechs,
 animals (`ThingDef` with `race`), tattoos, royal titles, creepjoiner
 form/benefit/downside/aggressive/rejection defs, and `BodyDef`
