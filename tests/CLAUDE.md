@@ -88,6 +88,12 @@
   id->def index across all <thing> in the save, not just pawns).
   Renderer groups by def name with a count×label breakdown sorted
   by count desc, threaded through mod-aware labels.
+- Bonded animals covered in test_render.py: extractor follows
+  social/directRelations/li[def='Bond']/otherPawn into the pawn
+  index (animals are Pawn-class things). Animal name is read from
+  the NameSingle shape (<name><name>Pebble</name></name>). Renderer
+  emits "Name the Species (Gender, Xy)" with gender/age skipped
+  when absent; falls back to "the Species" for anonymous animals.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

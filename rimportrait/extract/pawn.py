@@ -10,6 +10,7 @@ from lxml import etree
 from ..colors import RGBA
 from ..records import (
   ApparelItem,
+  BondedAnimal,
   CarriedInfant,
   CreepJoinerState,
   Gene,
@@ -212,6 +213,53 @@ def _inventory(el: etree._Element) -> tuple[InventoryItem, ...]:
       def_name=d,
       stack_count=count,
       stuff=li.findtext("stuff"),
+    ))
+  return tuple(out)
+
+
+def _animal_name(el: etree._Element) -> str | None:
+  """Read an animal pawn's NameSingle <name><name>X</name></name>.
+
+  Animals serialise their name as ``<name Class="NameSingle">
+  <name>Pebble</name></name>`` rather than the human first/nick/last
+  shape. Unnamed animals have IsNull on the outer name element.
+  """
+  name_el = el.find("name")
+  if name_el is None or name_el.attrib.get("IsNull") == "True":
+    return None
+  inner = name_el.findtext("name")
+  if inner and inner.strip():
+    return inner.strip()
+  return None
+
+
+def _bonded_animals(
+  el: etree._Element, save: Save
+) -> tuple[BondedAnimal, ...]:
+  """Resolve every Bond direct-relation to a BondedAnimal record.
+
+  Animals are Pawn-class things, so they're already indexed in
+  ``save.pawns_by_id``. We pull species (<def>), single-style name,
+  gender, and biological age. Refs that can't be resolved are
+  silently dropped.
+  """
+  out: list[BondedAnimal] = []
+  for li in el.iterfind("social/directRelations/li"):
+    if li.findtext("def") != "Bond":
+      continue
+    ref = li.findtext("otherPawn")
+    if not ref or ref.lower() == "null":
+      continue
+    pid = _strip(ref.strip())
+    other = save.pawns_by_id.get(pid)
+    if other is None:
+      continue
+    bio, _chrono = _age(other)
+    out.append(BondedAnimal(
+      def_name=other.findtext("def") or "",
+      name=_animal_name(other),
+      gender=other.findtext("gender"),
+      bio_age=bio,
     ))
   return tuple(out)
 
@@ -677,6 +725,7 @@ def pawn_from_element(
     psyfocus=_psyfocus_if_psycaster(el),
     creepjoiner=_creepjoiner(el),
     connections=_connections(el, save),
+    bonded_animals=_bonded_animals(el, save),
   )
 
 

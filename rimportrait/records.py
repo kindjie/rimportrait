@@ -84,6 +84,20 @@ class CarriedInfant:
 
 
 @dataclass(frozen=True)
+class BondedAnimal:
+  """Animal pawn bonded to a colonist via a Bond direct-relation.
+
+  Species comes from the animal pawn's ``<def>`` (e.g. Wolf_Timber,
+  Thrumbo, Warg). The renderer threads this through the mod-aware
+  label index so modded animal species get clean labels.
+  """
+  def_name: str
+  name: str | None = None
+  gender: str | None = None
+  bio_age: float | None = None
+
+
+@dataclass(frozen=True)
 class CreepJoinerState:
   """Anomaly creepjoiner quest state.
 
@@ -181,3 +195,5 @@ class PawnRecord:
   # names so the renderer can label them via the mod-aware def
   # index. Empty when the pawn has no active connection.
   connections: tuple[str, ...] = ()
+  # Animals bonded to this pawn via the ``Bond`` direct-relation.
+  bonded_animals: tuple[BondedAnimal, ...] = ()

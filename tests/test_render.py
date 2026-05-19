@@ -3,6 +3,7 @@ from __future__ import annotations
 from rimportrait.colors import RGBA
 from rimportrait.records import (
   ApparelItem,
+  BondedAnimal,
   CarriedInfant,
   CreepJoinerState,
   Gene,
@@ -447,6 +448,64 @@ def test_commanded_mechs_omitted_when_pawn_commands_none():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   assert "Commanded mechs:" not in out
+
+
+def test_bonded_animals_line_lists_each_companion():
+  pawn = PawnRecord(
+    pawn_id="990",
+    name_full="Beast Master",
+    label="Beast",
+    role="colonist",
+    bonded_animals=(
+      BondedAnimal("Wolf_Timber", name="Pebble", gender="Female", bio_age=2.2),
+      BondedAnimal("Thrumbo", name="Banjo", gender="Female", bio_age=8.0),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert (
+    "Bonded animals: Pebble the wolf timber (Female, 2y), "
+    "Banjo the thrumbo (Female, 8y)" in out
+  )
+
+
+def test_bonded_animals_anonymous_falls_back_to_species():
+  pawn = PawnRecord(
+    pawn_id="991",
+    name_full="Beast Master",
+    label="Beast",
+    role="colonist",
+    bonded_animals=(
+      BondedAnimal("Wolf_Timber", name=None, gender="Male", bio_age=1.5),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Bonded animals: the wolf timber (Male, 2y)" in out
+
+
+def test_bonded_animals_threads_species_labels():
+  pawn = PawnRecord(
+    pawn_id="992",
+    name_full="Beast Master",
+    label="Beast",
+    role="colonist",
+    bonded_animals=(BondedAnimal("Wolf_Timber", name="Pebble"),),
+  )
+  labels = {"Wolf_Timber": "timber wolf"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels
+  )
+  assert "Bonded animals: Pebble the timber wolf" in out
+
+
+def test_bonded_animals_line_omitted_when_empty():
+  pawn = PawnRecord(
+    pawn_id="993",
+    name_full="Lonely",
+    label="Lonely",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Bonded animals:" not in out
 
 
 def test_connections_line_groups_and_counts_thing_defs():

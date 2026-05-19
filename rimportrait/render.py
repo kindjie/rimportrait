@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from .colors import describe_rgba
 from .records import (
   ApparelItem,
+  BondedAnimal,
   CreepJoinerState,
   GradientHair,
   IdeoRecord,
@@ -306,6 +307,36 @@ def _psyfocus_value(psyfocus: float | None) -> str | None:
   else:
     band = "depleted"
   return f"{band} ({pct}%)"
+
+
+def _bonded_animals_value(
+  animals: tuple[BondedAnimal, ...],
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  """Render bonded animals as 'Name the Species (Gender, Xy), ...'.
+
+  Species def is threaded through mod-aware labels. Anonymous animals
+  fall back to "the <species>" without a name prefix. Age and gender
+  are omitted from the parenthetical when unknown.
+  """
+  if not animals:
+    return None
+  parts: list[str] = []
+  for a in animals:
+    species = (
+      (labels.get(a.def_name) if labels else None)
+      or humanise(a.def_name)
+    )
+    head = f"{a.name} the {species}" if a.name else f"the {species}"
+    bits: list[str] = []
+    if a.gender:
+      bits.append(a.gender)
+    if a.bio_age is not None:
+      bits.append(f"{a.bio_age:.0f}y")
+    if bits:
+      head += " (" + ", ".join(bits) + ")"
+    parts.append(head)
+  return ", ".join(parts)
 
 
 def _connections_value(
@@ -620,6 +651,8 @@ def render_portrait(
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Connections",
           _connections_value(p.connections, def_labels)),
+    _line("Bonded animals",
+          _bonded_animals_value(p.bonded_animals, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity", p.current_job),
@@ -688,6 +721,8 @@ def _person_block(
           _commanded_mechs_value(p.commanded_mechs, def_labels)),
     _line("Connections",
           _connections_value(p.connections, def_labels)),
+    _line("Bonded animals",
+          _bonded_animals_value(p.bonded_animals, def_labels)),
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity before portrait", p.current_job),
