@@ -67,6 +67,17 @@ uv run rimportrait sample.rws --pawn NAME \
 uv run rimportrait sample.rws --pawn NAME \
   --generate --image --image-model gemini-3-pro-image-preview \
   --out-dir out/
+
+# Steer the aesthetic with style/composition/camera knobs
+uv run rimportrait sample.rws --pawn NAME --generate --image \
+  --style "oil painting" \
+  --shot "posed three-quarter, restrained background" \
+  --camera "classical portrait framing, warm palette" \
+  --out-dir out/
+
+# Or pick a named preset (overrides applied on top)
+uv run rimportrait sample.rws --pawn NAME --generate --image \
+  --preset propaganda --out-dir out/
 ```
 
 Output is a `[PORTRAIT SUBJECT]` or `[FAMILY PORTRAIT SUBJECT]` block
@@ -93,6 +104,29 @@ either with `--image-model NAME`. The image step requires
 LLM-polished paragraph is what the image models are tuned for.
 Portrait renders use a 3:4 frame (1024×1536 OpenAI / 3:4 Google);
 family renders use a 4:3 frame so groups fit.
+
+Three style knobs steer the aesthetic by modifying the LLM system
+instruction (and therefore the resulting paragraph + image):
+
+- `--style "..."` — visual style (realistic, anime, oil painting,
+  graphic novel inks, propaganda poster, …).
+- `--shot "..."` — composition / shot type (posed three-quarter,
+  mid-action, candid, environmental wide, …).
+- `--camera "..."` — camera / lens guidance (85mm portrait shallow
+  DoF, low-angle wide, chiaroscuro lighting, …).
+
+Or pick a starter preset and override individual knobs as needed:
+
+| Preset | Style |
+|---|---|
+| `moody-portrait` | realistic gritty, 85mm shallow DoF, low-key lighting |
+| `action`         | realistic gritty, mid-action, 35mm wide deep focus |
+| `oil-painting`   | oil painting, classical framing, warm chiaroscuro |
+| `comic`          | graphic novel inks, halftone, high contrast |
+| `propaganda`     | stark Soviet poster, heroic low angle, hard edges |
+
+Preset phrasing is provisional — additions and refinements live in
+`packages/rimportrait/rimportrait/style.py`.
 
 ## Library use (rimsave)
 

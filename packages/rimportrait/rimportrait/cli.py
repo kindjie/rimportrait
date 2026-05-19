@@ -33,7 +33,7 @@ from rimsave import (
 )
 from rimsave.records import MapContext, PawnRecord
 
-from . import llm
+from . import llm, style
 from .render import instruction_for, render_family, render_portrait
 
 
@@ -161,6 +161,34 @@ def _build_parser() -> argparse.ArgumentParser:
       "Nano Banana Pro."
     ),
   )
+  p.add_argument(
+    "--style", default=None,
+    help=(
+      "Visual style for --generate: realistic, anime, oil painting, "
+      "graphic novel inks, propaganda poster, etc. Free-form."
+    ),
+  )
+  p.add_argument(
+    "--shot", default=None,
+    help=(
+      "Composition / shot type for --generate: posed three-quarter, "
+      "mid-action, candid, environmental wide, etc. Free-form."
+    ),
+  )
+  p.add_argument(
+    "--camera", default=None,
+    help=(
+      "Camera / lens guidance for --generate: '85mm portrait, "
+      "shallow DoF', 'low-angle wide', etc. Free-form."
+    ),
+  )
+  p.add_argument(
+    "--preset", choices=sorted(style.PRESETS.keys()), default=None,
+    help=(
+      "Named bundle of style+shot+camera. Explicit --style/--shot/"
+      "--camera flags override the preset's values."
+    ),
+  )
   return p
 
 
@@ -255,11 +283,14 @@ def _maybe_generate(
 ) -> str:
   if not args.generate:
     return block
+  resolved = style.resolve(
+    args.preset, args.style, args.shot, args.camera
+  )
+  system = style.compose_instruction(
+    instruction_for(kind), kind, resolved
+  )
   return llm.complete(
-    args.provider,
-    system=instruction_for(kind),
-    user=block,
-    model=args.model,
+    args.provider, system=system, user=block, model=args.model,
   )
 
 
@@ -292,6 +323,13 @@ def main(argv: list[str] | None = None) -> int:
   if args.image and args.out_dir is None:
     print("error: --image requires --out-dir", file=sys.stderr)
     return 2
+  if (args.style or args.shot or args.camera or args.preset) \
+      and not args.generate:
+    print(
+      "warning: --style/--shot/--camera/--preset have no effect "
+      "without --generate",
+      file=sys.stderr,
+    )
   if not args.save.exists():
     print(f"error: save not found: {args.save}", file=sys.stderr)
     return 2
