@@ -71,6 +71,10 @@ class IdeoRecord:
   apparel_color: RGBA | None = None
   description: str | None = None
   style_summary: str | None = None
+  # (category, priority) pairs sorted by priority descending. Highest
+  # priority is the dominant visual aesthetic the LLM should weight.
+  style_categories: tuple[tuple[str, int], ...] = ()
+  memes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -214,7 +214,37 @@ def _ideo(el: etree._Element, save: Save) -> IdeoRecord | None:
     apparel_color=apparel,
     description=_strip_tags(ideo_el.findtext("description")),
     style_summary=ideo_el.findtext("adjective"),
+    style_categories=_style_categories(ideo_el),
+    memes=_memes(ideo_el),
   )
+
+
+def _style_categories(
+  ideo_el: etree._Element,
+) -> tuple[tuple[str, int], ...]:
+  """Return (category, priority) pairs sorted by priority descending."""
+  pairs: list[tuple[str, int]] = []
+  for li in ideo_el.iterfind("thingStyleCategories/li"):
+    cat = (li.findtext("category") or "").strip()
+    if not cat:
+      continue
+    raw = li.findtext("priority")
+    try:
+      pri = int(raw) if raw else 0
+    except ValueError:
+      pri = 0
+    pairs.append((cat, pri))
+  pairs.sort(key=lambda p: (-p[1], p[0]))
+  return tuple(pairs)
+
+
+def _memes(ideo_el: etree._Element) -> tuple[str, ...]:
+  out: list[str] = []
+  for li in ideo_el.iterfind("memes/li"):
+    text = (li.text or "").strip()
+    if text:
+      out.append(text)
+  return tuple(out)
 
 
 def _age(el: etree._Element) -> tuple[float | None, float | None]:

@@ -115,6 +115,42 @@ def test_portrait_includes_ideology_colors():
   assert "muted blue-gray" in out
 
 
+def test_portrait_renders_ideology_style_and_memes_raw():
+  pawn = PawnRecord(
+    pawn_id="106",
+    name_full="Theo Ideo",
+    label="Theo",
+    role="colonist",
+    ideo=IdeoRecord(
+      name="Made-Up Creed",
+      style_categories=(("Techist", 4), ("Rustic", 2)),
+      memes=("Structure_Archist", "Loyalist", "Transhumanist"),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # Style categories are emitted with priority verbatim, no curated
+  # phrasing (the downstream LLM does the translation step).
+  assert (
+    "Ideology style aesthetic: Techist (priority 4), Rustic (priority 2)"
+  ) in out
+  assert (
+    "Ideology memes: Structure_Archist, Loyalist, Transhumanist"
+  ) in out
+
+
+def test_portrait_omits_ideology_style_and_memes_when_empty():
+  pawn = PawnRecord(
+    pawn_id="107",
+    name_full="Plain Ideo",
+    label="Plain",
+    role="colonist",
+    ideo=IdeoRecord(name="Bare Faith"),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Ideology style aesthetic:" not in out
+  assert "Ideology memes:" not in out
+
+
 def test_portrait_wealth_tier_is_descriptive_not_numeric():
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
   assert "prosperous colony" in out

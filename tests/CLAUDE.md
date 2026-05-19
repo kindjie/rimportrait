@@ -12,6 +12,10 @@
   armor/clothing", "Utility belts/gear" (belts, bandoliers, carriers,
   gunlinks, jump packs; substring-matched to catch modded variants),
   "Wielded weapon" — each line emitted only when non-empty.
+- Ideology style aesthetic + memes are emitted as raw def names with
+  priorities verbatim, per the project's data-first principle. No
+  curated translation tables — the downstream LLM does the visual
+  translation step.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

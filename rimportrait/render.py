@@ -256,8 +256,23 @@ def _ideo_block_lines(ideo: IdeoRecord | None) -> list[str]:
     _line("Ideology apparel color", describe_rgba(ideo.apparel_color)),
     _line("Ideology description/style",
           ideo.description or ideo.style_summary),
+    _line("Ideology style aesthetic", _style_categories_value(ideo)),
+    _line("Ideology memes", ", ".join(ideo.memes) or None),
   ]
   return [s for s in lines if s]
+
+
+def _style_categories_value(ideo: IdeoRecord) -> str | None:
+  """Render the ideology's thingStyleCategories as 'X (priority N), ...'.
+
+  Priority is included verbatim from the save - the LLM can decide
+  weighting. No curated visual phrasing; per the project's data-first
+  principle the def names are emitted as-is.
+  """
+  if not ideo.style_categories:
+    return None
+  parts = [f"{cat} (priority {pri})" for cat, pri in ideo.style_categories]
+  return ", ".join(parts)
 
 
 def _map_block_lines(m: MapContext | None) -> list[str]:
@@ -409,6 +424,9 @@ def render_family(
       _line("Ideology primary color", describe_rgba(focus.ideo.color)),
       _line("Ideology apparel color",
             describe_rgba(focus.ideo.apparel_color)),
+      _line("Ideology style aesthetic",
+            _style_categories_value(focus.ideo)),
+      _line("Ideology memes", ", ".join(focus.ideo.memes) or None),
     ):
       if ln:
         lines.append(ln)
