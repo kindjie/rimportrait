@@ -38,6 +38,7 @@ _INTERESTING_DEF_TYPES = (
   "HediffDef",
   "XenotypeDef",
   "BodyPartDef",
+  "RoyalTitleDef",
 )
 
 

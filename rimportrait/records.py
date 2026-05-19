@@ -66,6 +66,13 @@ class Relation:
 
 
 @dataclass(frozen=True)
+class RoyalTitle:
+  def_name: str
+  faction_id: str | None = None
+  faction_name: str | None = None
+
+
+@dataclass(frozen=True)
 class IdeoRecord:
   name: str
   color: RGBA | None = None
@@ -126,3 +133,4 @@ class PawnRecord:
   inventory: tuple[InventoryItem, ...] = ()
   ideo: IdeoRecord | None = None
   relations: tuple[Relation, ...] = ()
+  royal_titles: tuple[RoyalTitle, ...] = ()

@@ -18,6 +18,7 @@ from ..records import (
   MapContext,
   PawnRecord,
   Relation,
+  RoyalTitle,
   Weapon,
 )
 from ..translate.colordef import apparel_variant, lookup_color_def
@@ -192,6 +193,28 @@ def _relations(el: etree._Element) -> tuple[Relation, ...]:
     other = li.findtext("otherPawn")
     if d and other and other.lower() != "null":
       out.append(Relation(def_name=d, other_pawn_id=other))
+  return tuple(out)
+
+
+def _royal_titles(
+  el: etree._Element, save: Save
+) -> tuple[RoyalTitle, ...]:
+  out: list[RoyalTitle] = []
+  for li in el.iterfind("royalty/titles/li"):
+    def_name = li.findtext("def")
+    if not def_name:
+      continue
+    faction_ref = li.findtext("faction")
+    faction_name: str | None = None
+    if faction_ref:
+      f_el = save.factions_by_id.get(faction_ref)
+      if f_el is not None:
+        faction_name = f_el.findtext("name")
+    out.append(RoyalTitle(
+      def_name=def_name,
+      faction_id=faction_ref,
+      faction_name=faction_name,
+    ))
   return tuple(out)
 
 
@@ -466,6 +489,7 @@ def pawn_from_element(
     inventory=_inventory(el),
     ideo=_ideo(el, save),
     relations=_relations(el),
+    royal_titles=_royal_titles(el, save),
   )
 
 

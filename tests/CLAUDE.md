@@ -27,6 +27,11 @@
   description -> label -> xenogene list -> humanised slug. Endogenes
   are excluded from the gene-list fallback so only the xenotype's
   defining genes appear.
+- Royal title rendering is covered in `test_render.py`. RoyalTitleDef
+  is part of the mod-aware def index, so per-faction label overrides
+  (e.g. Empire's Count -> archon) flow through automatically; tests
+  assert both the label-provided and no-labels (def-name) paths and
+  the semicolon-joined multi-title shape.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

@@ -18,6 +18,7 @@ from .records import (
   MapContext,
   PawnRecord,
   Relation,
+  RoyalTitle,
   Weapon,
 )
 from .translate.apparel import (
@@ -168,6 +169,32 @@ def _carrying_summary(
   if not items:
     return None
   return ", ".join(items)
+
+
+def _royal_title_line(
+  titles: tuple[RoyalTitle, ...],
+  labels: dict[str, str] | None = None,
+) -> str | None:
+  """Render royal titles using the mod-aware label override.
+
+  RimWorld's RoyalTitleDef labels (e.g. ``Count`` -> ``archon`` for
+  the Empire) live in the def index. We surface both the def name and
+  the resolved label so the LLM has both signals.
+  """
+  if not titles:
+    return None
+  parts: list[str] = []
+  for t in titles:
+    label = labels.get(t.def_name) if labels else None
+    if label and label != t.def_name:
+      head = f"{t.def_name} - {label}"
+    else:
+      head = t.def_name
+    if t.faction_name:
+      parts.append(f"{head}, of {t.faction_name}")
+    else:
+      parts.append(head)
+  return "; ".join(parts)
 
 
 def _race_xenotype(
@@ -346,6 +373,8 @@ def render_portrait(
   for ln in (
     _line("Name", name),
     _line("Role", p.role.capitalize() if p.role else None),
+    _line("Royal title",
+          _royal_title_line(p.royal_titles, def_labels)),
     _line("Race/xenotype",
           _race_xenotype(p, def_descriptions, def_labels)),
     _line("Gender", p.gender),
@@ -401,6 +430,8 @@ def _person_block(
     _line("Name", name),
     _line("Relation to focus pawn", relation_to_focus),
     _line("Role", p.role.capitalize() if p.role else None),
+    _line("Royal title",
+          _royal_title_line(p.royal_titles, def_labels)),
     _line("Race/xenotype",
           _race_xenotype(p, def_descriptions, def_labels)),
     _line("Gender", p.gender),

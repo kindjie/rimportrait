@@ -11,6 +11,7 @@ from rimportrait.records import (
   MapContext,
   PawnRecord,
   Relation,
+  RoyalTitle,
   Weapon,
 )
 from rimportrait.render import (
@@ -539,6 +540,75 @@ def test_xenotype_renders_mod_aware_description_when_provided():
     "Race/xenotype: Sanguophage - "
     "an ageless transhuman with vampiric traits"
   ) in out
+
+
+def test_royal_title_renders_label_override_when_provided():
+  pawn = PawnRecord(
+    pawn_id="200",
+    name_full="No Bil",
+    label="No Bil",
+    role="colonist",
+    royal_titles=(
+      RoyalTitle(
+        def_name="Count",
+        faction_id="Faction_7",
+        faction_name="Faction Alpha",
+      ),
+    ),
+  )
+  labels = {"Count": "archon"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels
+  )
+  assert (
+    "Royal title: Count - archon, of Faction Alpha" in out
+  )
+
+
+def test_royal_title_falls_back_to_def_name_without_labels():
+  pawn = PawnRecord(
+    pawn_id="201",
+    name_full="No Bil",
+    label="No Bil",
+    role="colonist",
+    royal_titles=(
+      RoyalTitle(
+        def_name="Knight",
+        faction_id="Faction_7",
+        faction_name="Faction Alpha",
+      ),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Royal title: Knight, of Faction Alpha" in out
+
+
+def test_royal_title_omitted_when_pawn_has_no_titles():
+  pawn = PawnRecord(
+    pawn_id="202",
+    name_full="Plain Pawn",
+    label="Plain",
+    role="colonist",
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Royal title:" not in out
+
+
+def test_multiple_royal_titles_render_semicolon_joined():
+  pawn = PawnRecord(
+    pawn_id="203",
+    name_full="Bi Lateral",
+    label="Bi",
+    role="colonist",
+    royal_titles=(
+      RoyalTitle(def_name="Count", faction_name="Empire A"),
+      RoyalTitle(def_name="Baron", faction_name="Empire B"),
+    ),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  assert (
+    "Royal title: Count, of Empire A; Baron, of Empire B" in out
+  )
 
 
 def test_xenotype_falls_back_to_xenogene_list_when_no_description():
