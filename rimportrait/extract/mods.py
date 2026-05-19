@@ -41,6 +41,7 @@ _INTERESTING_DEF_TYPES = (
   "RoyalTitleDef",
   "InspirationDef",
   "AbilityDef",
+  "TattooDef",
   # Anomaly creepjoiner def families (note the inconsistent
   # capitalisation in CreepjoinerRejectionDef vs the others — that's
   # the actual tag name in RimWorld's Anomaly Defs).
@@ -350,6 +351,7 @@ class DefRecord:
   tex_path: str | None
   source: str  # package_id
   max_health: int | None = None
+  category: str | None = None
 
 
 @dataclass
@@ -364,6 +366,7 @@ class _RawDef:
   tex_path: str | None
   source: str
   max_health: int | None = None
+  category: str | None = None
 
 
 def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
@@ -398,6 +401,8 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
           max_health = int(float(max_health_raw.strip()))
         except ValueError:
           max_health = None
+      category_raw = el.findtext("category")
+      category = category_raw.strip() if category_raw else None
       out.append(_RawDef(
         def_type=el.tag,
         name_attr=name_attr.strip() if name_attr else None,
@@ -409,6 +414,7 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
         tex_path=tex_path.strip() if tex_path else None,
         source=source,
         max_health=max_health,
+        category=category,
       ))
   return out
 
@@ -463,6 +469,7 @@ def _resolve_inheritance(raws: list[_RawDef]) -> list[DefRecord]:
       tex_path=inherit(r, "tex_path"),
       source=r.source,
       max_health=inherit_int(r, "max_health"),
+      category=inherit(r, "category"),
     ))
   return out
 
@@ -508,3 +515,9 @@ def index_to_texpaths(
   index: dict[str, DefRecord],
 ) -> dict[str, str]:
   return {k: v.tex_path for k, v in index.items() if v.tex_path}
+
+
+def index_to_categories(
+  index: dict[str, DefRecord],
+) -> dict[str, str]:
+  return {k: v.category for k, v in index.items() if v.category}

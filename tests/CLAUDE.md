@@ -105,6 +105,12 @@
   below 0.25. Other needs (Beauty/Comfort/Indoors/RoomSize/Joy/
   DrugDesire/Learning/Suppression/Chemical_*) are deliberately
   skipped — they don't produce visible cues on a portrait.
+- Tattoo rendering: TattooDef is part of the mod-aware def index;
+  its <category> (Punk / Tribal / Royal / Floral / Body / Hair /
+  …) is captured alongside label/description on every DefRecord
+  and exposed via `index_to_categories`. The renderer's
+  `_tattoo_phrase` composes `label (Category style)` when both
+  are available, omits whichever is missing.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)

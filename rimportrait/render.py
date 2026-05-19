@@ -500,7 +500,11 @@ def _personality(p: PawnRecord) -> str | None:
   return "; ".join(bits)
 
 
-def _compact_head_and_face(p: PawnRecord) -> str | None:
+def _compact_head_and_face(
+  p: PawnRecord,
+  labels: dict[str, str] | None = None,
+  categories: dict[str, str] | None = None,
+) -> str | None:
   bits: list[str] = []
   hair_style = describe_hair_style(
     p.hair_def, p.hair_label, p.hair_texture_path
@@ -521,10 +525,12 @@ def _compact_head_and_face(p: PawnRecord) -> str | None:
   beard = p.beard_label or p.beard_def
   if beard and beard.lower() != "nobeard":
     bits.append(f"beard {beard}")
-  if p.face_tattoo:
-    bits.append(f"face tattoo {p.face_tattoo}")
-  if p.body_tattoo:
-    bits.append(f"body tattoo {p.body_tattoo}")
+  face_tat = _tattoo_phrase(p.face_tattoo, labels, categories)
+  if face_tat:
+    bits.append(f"face tattoo {face_tat}")
+  body_tat = _tattoo_phrase(p.body_tattoo, labels, categories)
+  if body_tat:
+    bits.append(f"body tattoo {body_tat}")
   skin = describe_rgba(p.skin_color)
   if skin:
     bits.append(f"skin {skin}")
@@ -538,7 +544,37 @@ def _compact_head_and_face(p: PawnRecord) -> str | None:
 
 # --- single-portrait block --------------------------------------------
 
-def _head_and_face_block(p: PawnRecord) -> list[str]:
+def _tattoo_phrase(
+  def_name: str | None,
+  labels: dict[str, str] | None,
+  categories: dict[str, str] | None,
+) -> str | None:
+  """Render a tattoo def as 'label (Category style)' when possible.
+
+  TattooDefs carry both a human-readable ``<label>`` and a
+  ``<category>`` (Punk / Tribal / Royal / etc.) that's a strong
+  visual genre cue for the image-prompt LLM. We thread both through
+  the mod-aware def index; the def name still appears as a fallback
+  prefix when only one of the two is known.
+  """
+  if not def_name:
+    return None
+  label = labels.get(def_name) if labels else None
+  category = categories.get(def_name) if categories else None
+  if label and category:
+    return f"{label} ({category} style)"
+  if label:
+    return label
+  if category:
+    return f"{def_name} ({category} style)"
+  return def_name
+
+
+def _head_and_face_block(
+  p: PawnRecord,
+  labels: dict[str, str] | None = None,
+  categories: dict[str, str] | None = None,
+) -> list[str]:
   hair_style = describe_hair_style(
     p.hair_def, p.hair_label, p.hair_texture_path
   )
@@ -558,8 +594,8 @@ def _head_and_face_block(p: PawnRecord) -> list[str]:
     _sub("Beard", beard_disp),
     _sub("Beard color",
          describe_rgba(p.beard_color) if p.beard_color else None),
-    _sub("Face tattoo", p.face_tattoo),
-    _sub("Body tattoo", p.body_tattoo),
+    _sub("Face tattoo", _tattoo_phrase(p.face_tattoo, labels, categories)),
+    _sub("Body tattoo", _tattoo_phrase(p.body_tattoo, labels, categories)),
     _sub("Skin color", describe_rgba(p.skin_color)),
     _sub("Eye color", describe_rgba(p.eye_color)),
   ]
@@ -637,6 +673,7 @@ def render_portrait(
   include_instruction: bool = True,
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
+  def_categories: dict[str, str] | None = None,
 ) -> str:
   """Build the [PORTRAIT SUBJECT] block for a single pawn."""
   name = p.label or p.nickname or p.name_full
@@ -653,7 +690,7 @@ def render_portrait(
   ):
     if ln:
       lines.append(ln)
-  head = _head_and_face_block(p)
+  head = _head_and_face_block(p, def_labels, def_categories)
   if head:
     lines.append("Head and face:")
     lines.extend(head)
@@ -715,6 +752,7 @@ def _person_block(
   relation_to_focus: str,
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
+  def_categories: dict[str, str] | None = None,
 ) -> list[str]:
   lines: list[str] = ["[PERSON]"]
   name = p.label or p.nickname or p.name_full
@@ -728,7 +766,8 @@ def _person_block(
           _race_xenotype(p, def_descriptions, def_labels)),
     _line("Gender", p.gender),
     _line("Age", _age_str(p.bio_age, p.chrono_age)),
-    _line("Head and face", _compact_head_and_face(p)),
+    _line("Head and face",
+          _compact_head_and_face(p, def_labels, def_categories)),
     _line("Traits affecting expression",
           ", ".join(p.traits) if p.traits else None),
     _line("Personality/expression", _personality(p)),
@@ -780,6 +819,7 @@ def render_family(
   include_instruction: bool = True,
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
+  def_categories: dict[str, str] | None = None,
 ) -> str:
   """Build the [FAMILY PORTRAIT SUBJECT] block.
 
@@ -814,7 +854,8 @@ def render_family(
     lines.append("Family members:")
     for rel, other in members:
       lines.extend(_person_block(
-        other, rel.def_name, def_descriptions, def_labels
+        other, rel.def_name, def_descriptions, def_labels,
+        def_categories,
       ))
   lines.append("[/FAMILY PORTRAIT SUBJECT]")
   block = "\n".join(lines)

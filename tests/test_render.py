@@ -111,8 +111,41 @@ def test_portrait_includes_gradient_hair():
 def test_portrait_includes_beard_and_tattoos():
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
   assert "Beard: curly" in out
+  # No labels threaded -> raw def names fall through.
   assert "Face tattoo: Face_Tear" in out
   assert "Body tattoo: Body_Fullbody" in out
+
+
+def test_tattoos_render_label_and_category_when_indexed():
+  pawn = _sample_pawn()
+  labels = {"Face_Tear": "tear", "Body_Fullbody": "full body"}
+  categories = {"Face_Tear": "Punk", "Body_Fullbody": "Punk"}
+  out = render_portrait(
+    pawn, None, include_instruction=False,
+    def_labels=labels, def_categories=categories,
+  )
+  assert "Face tattoo: tear (Punk style)" in out
+  assert "Body tattoo: full body (Punk style)" in out
+
+
+def test_tattoos_render_label_only_when_category_missing():
+  pawn = _sample_pawn()
+  labels = {"Face_Tear": "tear"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_labels=labels,
+  )
+  assert "Face tattoo: tear\n" in out
+  # Body tattoo has no label nor category here -> raw def.
+  assert "Body tattoo: Body_Fullbody" in out
+
+
+def test_tattoos_render_category_with_raw_defname_when_no_label():
+  pawn = _sample_pawn()
+  categories = {"Face_Tear": "Punk"}
+  out = render_portrait(
+    pawn, None, include_instruction=False, def_categories=categories,
+  )
+  assert "Face tattoo: Face_Tear (Punk style)" in out
 
 
 def test_portrait_includes_ideology_colors():

@@ -22,6 +22,7 @@ from .extract import (
   family_members,
   find_pawn,
   humanlike_body_part_search_roots,
+  index_to_categories,
   index_to_descriptions,
   index_to_labels,
   iter_by_role,
@@ -167,20 +168,22 @@ def _build_index(
   save: Save, args: argparse.Namespace
 ) -> tuple[dict[str, object] | None,
            dict[str, str] | None,
+           dict[str, str] | None,
            dict[str, str] | None]:
   if args.no_defs:
-    return (None, None, None)
+    return (None, None, None, None)
   paths = _resolve_paths(args)
   if paths.rimworld_data is None and paths.workshop_dir is None \
       and paths.mods_dir is None:
-    return (None, None, None)
+    return (None, None, None, None)
   index = build_def_index_from_save(save, paths)
   if not index:
-    return (None, None, None)
+    return (None, None, None, None)
   return (
     index,  # for extractors (hair_texture_path enrichment)
     index_to_descriptions(index),
     index_to_labels(index),
+    index_to_categories(index),
   )
 
 
@@ -215,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     return 2
   save = load_save(args.save)
   inst = not args.no_instruction
-  def_index, defs_desc, defs_label = _build_index(save, args)
+  def_index, defs_desc, defs_label, defs_cat = _build_index(save, args)
   body_parts = _build_body_parts(args)
 
   if args.family:
@@ -228,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
       focus, members, _context(save, focus, args),
       include_instruction=inst,
       def_descriptions=defs_desc, def_labels=defs_label,
+      def_categories=defs_cat,
     )
     _emit(args.out_dir, block, focus, "family")
     return 0
@@ -241,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
       p, _context(save, p, args),
       include_instruction=inst,
       def_descriptions=defs_desc, def_labels=defs_label,
+      def_categories=defs_cat,
     )
     _emit(args.out_dir, block, p, "portrait")
     return 0
@@ -253,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
       p, _context(save, p, args),
       include_instruction=inst,
       def_descriptions=defs_desc, def_labels=defs_label,
+      def_categories=defs_cat,
     )
     _emit(args.out_dir, block, p, "portrait")
   return 0
