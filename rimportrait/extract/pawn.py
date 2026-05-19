@@ -129,13 +129,32 @@ def _genes(el: etree._Element) -> tuple[Gene, ...]:
   return tuple(out)
 
 
-def _hediffs(el: etree._Element) -> tuple[Hediff, ...]:
+def _hediffs(
+  el: etree._Element,
+  body_index: dict[int, str] | None = None,
+) -> tuple[Hediff, ...]:
+  """Read every hediff plus the affected body part if any.
+
+  RimWorld serialises the affected part as either a free-form label
+  (rare) or a flat integer ``<index>`` into the pawn's race body
+  tree. When ``body_index`` is supplied we resolve the integer to
+  the part label via a pre-order walk of the BodyDef.
+  """
   out: list[Hediff] = []
   for li in el.iterfind("healthTracker/hediffSet/hediffs/li"):
     d = li.findtext("def")
     if not d:
       continue
-    part = li.findtext("part/label") or li.findtext("Part") or None
+    part: str | None = (
+      li.findtext("part/label") or li.findtext("Part")
+    )
+    if not part and body_index is not None:
+      idx_raw = li.findtext("part/index")
+      if idx_raw:
+        try:
+          part = body_index.get(int(idx_raw))
+        except ValueError:
+          part = None
     out.append(Hediff(def_name=d, body_part=part))
   return tuple(out)
 
@@ -668,10 +687,33 @@ def _tattoo(el: etree._Element, kind: str) -> str | None:
   return v
 
 
+def _body_index_for_pawn(
+  el: etree._Element,
+  body_parts: dict[str, dict[int, str]] | None,
+) -> dict[int, str] | None:
+  """Pick the body-part index map matching this pawn's race def.
+
+  For Human pawns we always use the ``Human`` body (covers every
+  Biotech xenotype since they share the human body). For non-human
+  races we look up the body matching the race's def name, which is
+  rare and best-effort for modded races; otherwise we return None
+  and leave parts unresolved.
+  """
+  if not body_parts:
+    return None
+  race = el.findtext("def") or ""
+  if race == "Human":
+    return body_parts.get("Human")
+  if race in body_parts:
+    return body_parts[race]
+  return None
+
+
 def pawn_from_element(
   el: etree._Element,
   save: Save,
   def_index: dict[str, object] | None = None,
+  body_parts: dict[str, dict[int, str]] | None = None,
 ) -> PawnRecord:
   pid = el.findtext("id") or ""
   full, nick, label = _name(el)
@@ -681,6 +723,7 @@ def pawn_from_element(
     hair_def, def_index
   )
   bio, chrono = _age(el)
+  body_index = _body_index_for_pawn(el, body_parts)
   return PawnRecord(
     pawn_id=pid,
     name_full=full,
@@ -711,7 +754,7 @@ def pawn_from_element(
     favorite_color=_favorite_color(el),
     gradient_hair=_gradient_hair(el),
     genes=_genes(el),
-    hediffs=_hediffs(el),
+    hediffs=_hediffs(el, body_index),
     apparel=_apparel(el, def_index),
     equipment=_equipment(el, def_index),
     inventory=_inventory(el),
@@ -732,31 +775,41 @@ def pawn_from_element(
 # --- iteration helpers ------------------------------------------------
 
 def iter_pawns(
-  save: Save, def_index: dict[str, object] | None = None
+  save: Save,
+  def_index: dict[str, object] | None = None,
+  body_parts: dict[str, dict[int, str]] | None = None,
 ) -> Iterator[PawnRecord]:
   for el in save.pawns_by_id.values():
-    yield pawn_from_element(el, save, def_index)
+    yield pawn_from_element(el, save, def_index, body_parts)
 
 
 def iter_by_role(
-  save: Save, role: str, def_index: dict[str, object] | None = None
+  save: Save,
+  role: str,
+  def_index: dict[str, object] | None = None,
+  body_parts: dict[str, dict[int, str]] | None = None,
 ) -> Iterator[PawnRecord]:
-  for p in iter_pawns(save, def_index):
+  for p in iter_pawns(save, def_index, body_parts):
     if p.role == role:
       yield p
 
 
 def iter_colonists(
-  save: Save, def_index: dict[str, object] | None = None
+  save: Save,
+  def_index: dict[str, object] | None = None,
+  body_parts: dict[str, dict[int, str]] | None = None,
 ) -> Iterator[PawnRecord]:
-  yield from iter_by_role(save, "colonist", def_index)
+  yield from iter_by_role(save, "colonist", def_index, body_parts)
 
 
 def find_pawn(
-  save: Save, name: str, def_index: dict[str, object] | None = None
+  save: Save,
+  name: str,
+  def_index: dict[str, object] | None = None,
+  body_parts: dict[str, dict[int, str]] | None = None,
 ) -> PawnRecord | None:
   target = name.strip().lower()
-  for p in iter_pawns(save, def_index):
+  for p in iter_pawns(save, def_index, body_parts):
     candidates = [
       (p.label or "").lower(),
       (p.nickname or "").lower(),
@@ -771,6 +824,7 @@ def family_members(
   save: Save,
   focus: PawnRecord,
   def_index: dict[str, object] | None = None,
+  body_parts: dict[str, dict[int, str]] | None = None,
 ) -> list[tuple[Relation, PawnRecord]]:
   """Return direct relations of focus as (Relation, PawnRecord) pairs.
 
@@ -790,7 +844,7 @@ def family_members(
     el = save.pawns_by_id.get(_strip(rel.other_pawn_id))
     if el is None:
       continue
-    out.append((rel, pawn_from_element(el, save, def_index)))
+    out.append((rel, pawn_from_element(el, save, def_index, body_parts)))
   return out
 
 

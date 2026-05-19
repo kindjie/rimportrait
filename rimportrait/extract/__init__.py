@@ -12,6 +12,10 @@ Public surface:
 
 from __future__ import annotations
 
+from .body_parts import (
+  humanlike_body_part_search_roots,
+  parse_body_part_index,
+)
 from .defs import autodetect_rimworld_dir, load_def_descriptions, load_def_labels
 from .load import Save, load_save
 from .mods import (
@@ -51,6 +55,7 @@ __all__ = [
   "build_def_index_from_save",
   "family_members",
   "find_pawn",
+  "humanlike_body_part_search_roots",
   "index_to_descriptions",
   "index_to_labels",
   "index_to_texpaths",
@@ -62,5 +67,6 @@ __all__ = [
   "load_def_labels",
   "load_save",
   "map_context_for",
+  "parse_body_part_index",
   "pawn_from_element",
 ]

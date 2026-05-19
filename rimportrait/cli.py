@@ -21,12 +21,14 @@ from .extract import (
   build_def_index_from_save,
   family_members,
   find_pawn,
+  humanlike_body_part_search_roots,
   index_to_descriptions,
   index_to_labels,
   iter_by_role,
   iter_colonists,
   load_save,
   map_context_for,
+  parse_body_part_index,
 )
 from .records import MapContext, PawnRecord
 from .render import render_family, render_portrait
@@ -142,12 +144,13 @@ def _gather_default(
   include_prisoners: bool,
   include_guests: bool,
   def_index: dict[str, object] | None,
+  body_parts: dict[str, dict[int, str]] | None,
 ) -> list[PawnRecord]:
-  out = list(iter_colonists(save, def_index))
+  out = list(iter_colonists(save, def_index, body_parts))
   if include_prisoners:
-    out.extend(iter_by_role(save, "prisoner", def_index))
+    out.extend(iter_by_role(save, "prisoner", def_index, body_parts))
   if include_guests:
-    out.extend(iter_by_role(save, "guest", def_index))
+    out.extend(iter_by_role(save, "guest", def_index, body_parts))
   return out
 
 
@@ -181,6 +184,19 @@ def _build_index(
   )
 
 
+def _build_body_parts(
+  args: argparse.Namespace,
+) -> dict[str, dict[int, str]] | None:
+  if args.no_defs:
+    return None
+  paths = _resolve_paths(args)
+  roots = humanlike_body_part_search_roots(paths.rimworld_data)
+  if not roots:
+    return None
+  index = parse_body_part_index(roots)
+  return index or None
+
+
 def _context(
   save: Save, pawn: PawnRecord, args: argparse.Namespace
 ) -> MapContext | None:
@@ -200,13 +216,14 @@ def main(argv: list[str] | None = None) -> int:
   save = load_save(args.save)
   inst = not args.no_instruction
   def_index, defs_desc, defs_label = _build_index(save, args)
+  body_parts = _build_body_parts(args)
 
   if args.family:
-    focus = find_pawn(save, args.family, def_index)
+    focus = find_pawn(save, args.family, def_index, body_parts)
     if focus is None:
       print(f"error: no pawn named {args.family!r}", file=sys.stderr)
       return 4
-    members = family_members(save, focus, def_index)
+    members = family_members(save, focus, def_index, body_parts)
     block = render_family(
       focus, members, _context(save, focus, args),
       include_instruction=inst,
@@ -216,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
   if args.pawn:
-    p = find_pawn(save, args.pawn, def_index)
+    p = find_pawn(save, args.pawn, def_index, body_parts)
     if p is None:
       print(f"error: no pawn named {args.pawn!r}", file=sys.stderr)
       return 4
@@ -229,7 +246,8 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
   for p in _gather_default(
-    save, args.include_prisoners, args.include_guests, def_index
+    save, args.include_prisoners, args.include_guests,
+    def_index, body_parts,
   ):
     block = render_portrait(
       p, _context(save, p, args),

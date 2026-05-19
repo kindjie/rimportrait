@@ -94,6 +94,12 @@
   the NameSingle shape (<name><name>Pebble</name></name>). Renderer
   emits "Name the Species (Gender, Xy)" with gender/age skipped
   when absent; falls back to "the Species" for anonymous animals.
+- `test_body_parts.py` — pre-order BodyDef walk that resolves
+  hediff <part><index>N</index> integers to part labels via the
+  RimWorld Data dir + active mods. CustomLabel beats def name when
+  set. Threaded into _hediffs so Belle's `BionicLeg` shows
+  `(right leg)` and her 8 trailing `MissingBodyPart` hediffs read
+  out as right femur / tibia / foot / and all 5 toes.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture (near-black hair,
   bright cyan gradient mid-to-tip, curly beard, ideology blue-gray)
