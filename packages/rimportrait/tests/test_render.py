@@ -274,7 +274,7 @@ def test_carrying_line_lists_inventory_items_distinct_from_equipped():
     "12× shell high explosive"
   ) in out
   weapon_line = [
-    ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Wielded weapon:")
   ][0]
   assert "meal simple" not in weapon_line
   assert "shell high explosive" not in weapon_line
@@ -299,13 +299,13 @@ def test_gear_lines_split_armor_utility_and_weapon():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   armor_line = [
-    ln for ln in out.splitlines() if ln.startswith("Worn armor/clothing:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Worn armor/clothing:")
   ][0]
   utility_line = [
-    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Utility belts/gear:")
   ][0]
   weapon_line = [
-    ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Wielded weapon:")
   ][0]
   # Armor/clothing bucket: humanised def names (no labels threaded
   # in this synthetic test; downstream LLM does the visual step).
@@ -601,7 +601,7 @@ def test_pilot_state_line_emits_when_implant_present():
   assert "Pilot state: pilot assistant" in out
   body_line = [
     ln for ln in out.splitlines()
-    if ln.startswith("Visible implants/injuries/body changes:")
+    if ln.lstrip("- ").startswith("Visible implants/injuries/body changes:")
   ][0]
   assert "pilot assistant" not in body_line
   assert "archotech eye" in body_line
@@ -729,7 +729,7 @@ def test_shambler_state_line_promoted_above_body_changes():
   assert "Shambler state: shambler" in out
   body_line = [
     ln for ln in out.splitlines()
-    if ln.startswith("Visible implants/injuries/body changes:")
+    if ln.lstrip("- ").startswith("Visible implants/injuries/body changes:")
   ][0]
   assert "shambler" not in body_line
   assert "archotech eye" in body_line
@@ -766,7 +766,7 @@ def test_chemical_state_line_renders_drug_highs_only():
   assert "Visible implants/injuries/body changes: archotech eye" in out
   assert "yayo high" not in (
     [ln for ln in out.splitlines()
-     if ln.startswith("Visible implants")][0]
+     if ln.lstrip("- ").startswith("Visible implants")][0]
   )
 
 
@@ -884,7 +884,7 @@ def test_baby_carrier_marked_empty_when_no_infant():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   utility_line = [
-    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Utility belts/gear:")
   ][0]
   assert "(alpaca wool, empty)" in utility_line  # vanilla carrier
   assert "sbc baby carrier (empty)" in utility_line  # modded carrier
@@ -906,7 +906,7 @@ def test_baby_carrier_not_marked_empty_when_carrying_infant():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   utility_line = [
-    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Utility belts/gear:")
   ][0]
   # Carrier is occupied -> no "empty" marker. Material qualifier
   # still appears alone.
@@ -957,10 +957,10 @@ def test_condition_label_surfaces_in_apparel_qualifier():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   armor_line = [
-    ln for ln in out.splitlines() if ln.startswith("Worn armor/clothing:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Worn armor/clothing:")
   ][0]
   utility_line = [
-    ln for ln in out.splitlines() if ln.startswith("Utility belts/gear:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Utility belts/gear:")
   ][0]
   # Pristine item has no qualifier appended.
   assert "collar shirt (" not in armor_line
@@ -982,7 +982,7 @@ def test_condition_label_surfaces_on_weapon_qualifier():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   weapon_line = [
-    ln for ln in out.splitlines() if ln.startswith("Wielded weapon:")
+    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Wielded weapon:")
   ][0]
   assert "battered" in weapon_line
 

@@ -1076,48 +1076,65 @@ def render_portrait(
   if head:
     lines.append("Head and face:")
     lines.extend(head)
-  for ln in (
-    _line("Traits affecting expression",
-          ", ".join(p.traits) if p.traits else None),
-    _line("Personality/expression", _personality(p)),
-    _line("Mood", p.mood),
-    _line("Physical state", _physical_state(p)),
-    _line("Inspiration",
-          _inspiration_value(p.inspiration, def_descriptions, def_labels)),
-    _line("Chemical/drug state",
-          ", ".join(describe_chemical_state(p.hediffs, def_labels))
-          or None),
-    _line("Shambler state",
-          ", ".join(describe_shambler_state(p.hediffs, def_labels))
-          or None),
-    _line("Creepjoiner state",
-          _creepjoiner_value(p.creepjoiner, def_labels)),
-    _line("Pilot state", _pilot_state_value(p, def_labels)),
-    _line("Commanded mechs",
-          _commanded_mechs_value(p.commanded_mechs, def_labels)),
-    _line("Connections",
-          _connections_value(p.connections, def_labels)),
-    _line("Bonded animals",
-          _bonded_animals_value(p.bonded_animals, def_labels)),
-    _line("Abilities", _abilities_value(p.abilities, def_labels)),
-    _line("Psyfocus", _psyfocus_value(p.psyfocus)),
-    _line("Pose/activity", p.current_job),
-    _line("Setting", _setting_value(p)),
-    _line("Immediate setting", p.location),
-    _line("Favorite color/accent",
-          describe_favorite_color(p.favorite_color)),
-    _line("Visible genes/body traits",
-          ", ".join(describe_genes(p.genes, def_labels)) or None),
-    _line("Visible implants/injuries/body changes",
-          ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
-    *(_line(label, value)
-      for label, value in _gear_lines(p, def_labels)),
-    _line("Carrying infant in arms", _carrying_infant(p)),
-    _line("Carrying (pack/inventory)",
-          _carrying_summary(p, def_labels)),
-  ):
-    if ln:
-      lines.append(ln)
+  # Body — physical canvas the apparel sits on.
+  body = [s for s in (
+    _sub("Visible genes/body traits",
+         ", ".join(describe_genes(p.genes, def_labels)) or None),
+    _sub("Visible implants/injuries/body changes",
+         ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
+  ) if s]
+  if body:
+    lines.append("Body:")
+    lines.extend(body)
+  # Apparel — what's worn / wielded / carried, top to bottom.
+  apparel = [s for s in (
+    *(_sub(label, value) for label, value in _gear_lines(p, def_labels)),
+    _sub("Carrying infant in arms", _carrying_infant(p)),
+    _sub("Carrying (pack/inventory)", _carrying_summary(p, def_labels)),
+  ) if s]
+  if apparel:
+    lines.append("Apparel:")
+    lines.extend(apparel)
+  # Pose and scene — what they're doing and where.
+  pose = [s for s in (
+    _sub("Pose/activity", p.current_job),
+    _sub("Setting", _setting_value(p)),
+    _sub("Immediate setting", p.location),
+    _sub("Favorite color/accent",
+         describe_favorite_color(p.favorite_color)),
+  ) if s]
+  if pose:
+    lines.append("Pose and scene:")
+    lines.extend(pose)
+  # Behavior and state — drives expression / posture / mood cues.
+  behavior = [s for s in (
+    _sub("Traits affecting expression",
+         ", ".join(p.traits) if p.traits else None),
+    _sub("Personality/expression", _personality(p)),
+    _sub("Mood", p.mood),
+    _sub("Physical state", _physical_state(p)),
+    _sub("Inspiration",
+         _inspiration_value(p.inspiration, def_descriptions, def_labels)),
+    _sub("Chemical/drug state",
+         ", ".join(describe_chemical_state(p.hediffs, def_labels))
+         or None),
+    _sub("Shambler state",
+         ", ".join(describe_shambler_state(p.hediffs, def_labels))
+         or None),
+    _sub("Creepjoiner state",
+         _creepjoiner_value(p.creepjoiner, def_labels)),
+    _sub("Pilot state", _pilot_state_value(p, def_labels)),
+    _sub("Commanded mechs",
+         _commanded_mechs_value(p.commanded_mechs, def_labels)),
+    _sub("Connections", _connections_value(p.connections, def_labels)),
+    _sub("Bonded animals",
+         _bonded_animals_value(p.bonded_animals, def_labels)),
+    _sub("Abilities", _abilities_value(p.abilities, def_labels)),
+    _sub("Psyfocus", _psyfocus_value(p.psyfocus)),
+  ) if s]
+  if behavior:
+    lines.append("Behavior and state:")
+    lines.extend(behavior)
   lines.extend(_ideo_block_lines(p.ideo))
   lines.extend(_map_block_lines(map_context))
   lines.extend(_apparel_section(p.apparel, def_descriptions, def_labels))
@@ -1139,6 +1156,7 @@ def _person_block(
 ) -> list[str]:
   lines: list[str] = ["[PERSON]"]
   name = p.label or p.nickname or p.name_full
+  # Identity.
   for ln in (
     _line("Name", name),
     _line("Relation to focus pawn", relation_to_focus),
@@ -1151,46 +1169,67 @@ def _person_block(
     _line("Age", _age_str(p.bio_age, p.chrono_age)),
     _line("Head and face",
           _compact_head_and_face(p, def_labels, def_categories)),
-    _line("Traits affecting expression",
-          ", ".join(p.traits) if p.traits else None),
-    _line("Personality/expression", _personality(p)),
-    _line("Mood", p.mood),
-    _line("Physical state", _physical_state(p)),
-    _line("Inspiration",
-          _inspiration_value(p.inspiration, def_descriptions, def_labels)),
-    _line("Chemical/drug state",
-          ", ".join(describe_chemical_state(p.hediffs, def_labels))
-          or None),
-    _line("Shambler state",
-          ", ".join(describe_shambler_state(p.hediffs, def_labels))
-          or None),
-    _line("Creepjoiner state",
-          _creepjoiner_value(p.creepjoiner, def_labels)),
-    _line("Pilot state", _pilot_state_value(p, def_labels)),
-    _line("Commanded mechs",
-          _commanded_mechs_value(p.commanded_mechs, def_labels)),
-    _line("Connections",
-          _connections_value(p.connections, def_labels)),
-    _line("Bonded animals",
-          _bonded_animals_value(p.bonded_animals, def_labels)),
-    _line("Abilities", _abilities_value(p.abilities, def_labels)),
-    _line("Psyfocus", _psyfocus_value(p.psyfocus)),
-    _line("Pose/activity before portrait", p.current_job),
-    _line("Setting", _setting_value(p)),
-    _line("Favorite color/accent",
-          describe_favorite_color(p.favorite_color)),
-    _line("Visible genes/body traits",
-          ", ".join(describe_genes(p.genes, def_labels)) or None),
-    _line("Visible implants/injuries/body changes",
-          ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
-    *(_line(label, value)
-      for label, value in _gear_lines(p, def_labels)),
-    _line("Carrying infant in arms", _carrying_infant(p)),
-    _line("Carrying (pack/inventory)",
-          _carrying_summary(p, def_labels)),
   ):
     if ln:
       lines.append(ln)
+  # Body.
+  body = [s for s in (
+    _sub("Visible genes/body traits",
+         ", ".join(describe_genes(p.genes, def_labels)) or None),
+    _sub("Visible implants/injuries/body changes",
+         ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
+  ) if s]
+  if body:
+    lines.append("Body:")
+    lines.extend(body)
+  # Apparel.
+  apparel = [s for s in (
+    *(_sub(label, value) for label, value in _gear_lines(p, def_labels)),
+    _sub("Carrying infant in arms", _carrying_infant(p)),
+    _sub("Carrying (pack/inventory)", _carrying_summary(p, def_labels)),
+  ) if s]
+  if apparel:
+    lines.append("Apparel:")
+    lines.extend(apparel)
+  # Pose and scene.
+  pose = [s for s in (
+    _sub("Pose/activity before portrait", p.current_job),
+    _sub("Setting", _setting_value(p)),
+    _sub("Favorite color/accent",
+         describe_favorite_color(p.favorite_color)),
+  ) if s]
+  if pose:
+    lines.append("Pose and scene:")
+    lines.extend(pose)
+  # Behavior and state.
+  behavior = [s for s in (
+    _sub("Traits affecting expression",
+         ", ".join(p.traits) if p.traits else None),
+    _sub("Personality/expression", _personality(p)),
+    _sub("Mood", p.mood),
+    _sub("Physical state", _physical_state(p)),
+    _sub("Inspiration",
+         _inspiration_value(p.inspiration, def_descriptions, def_labels)),
+    _sub("Chemical/drug state",
+         ", ".join(describe_chemical_state(p.hediffs, def_labels))
+         or None),
+    _sub("Shambler state",
+         ", ".join(describe_shambler_state(p.hediffs, def_labels))
+         or None),
+    _sub("Creepjoiner state",
+         _creepjoiner_value(p.creepjoiner, def_labels)),
+    _sub("Pilot state", _pilot_state_value(p, def_labels)),
+    _sub("Commanded mechs",
+         _commanded_mechs_value(p.commanded_mechs, def_labels)),
+    _sub("Connections", _connections_value(p.connections, def_labels)),
+    _sub("Bonded animals",
+         _bonded_animals_value(p.bonded_animals, def_labels)),
+    _sub("Abilities", _abilities_value(p.abilities, def_labels)),
+    _sub("Psyfocus", _psyfocus_value(p.psyfocus)),
+  ) if s]
+  if behavior:
+    lines.append("Behavior and state:")
+    lines.extend(behavior)
   lines.append("[/PERSON]")
   return lines
 
