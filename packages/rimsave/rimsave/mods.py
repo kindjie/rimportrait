@@ -355,6 +355,13 @@ class DefRecord:
   source: str  # package_id
   max_health: int | None = None
   category: str | None = None
+  # Fixed material ingredients from <costList> in the def XML. For
+  # apparel with <stuffCategories> instead, this is empty - the
+  # runtime stuff descriptor on the ApparelItem already says what
+  # material was used. costList is the "no stuff slot" path:
+  # prestige cataphract uses Plasteel+Gold, royal regalia uses
+  # Cloth+Gold, etc. Tuple is (def_name, ...) preserving XML order.
+  cost_list: tuple[str, ...] = ()
 
 
 @dataclass
@@ -370,6 +377,7 @@ class _RawDef:
   source: str
   max_health: int | None = None
   category: str | None = None
+  cost_list: tuple[str, ...] = ()
 
 
 def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
@@ -406,6 +414,27 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
           max_health = None
       category_raw = el.findtext("category")
       category = category_raw.strip() if category_raw else None
+      cost_el = el.find("costList")
+      cost_list: tuple[str, ...] = ()
+      if cost_el is not None:
+        # Capture each (material_def, amount) so callers can sort
+        # bulk-first (75 plasteel + 9 gold reads as "plasteel with
+        # gold accents", not the XML order "gold + plasteel").
+        # Filter out lxml comment / PI nodes whose .tag is callable.
+        entries: list[tuple[str, int]] = []
+        for c in cost_el:
+          if not isinstance(c.tag, str):
+            continue
+          amount = 0
+          try:
+            amount = int(float((c.text or "0").strip()))
+          except ValueError:
+            pass
+          entries.append((c.tag, amount))
+        # Sort by amount descending (stable; preserves XML order on
+        # ties). Plasteel (75) lands before Gold (9).
+        entries.sort(key=lambda kv: -kv[1])
+        cost_list = tuple(name for name, _ in entries)
       out.append(_RawDef(
         def_type=el.tag,
         name_attr=name_attr.strip() if name_attr else None,
@@ -418,6 +447,7 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
         source=source,
         max_health=max_health,
         category=category,
+        cost_list=cost_list,
       ))
   return out
 
@@ -460,6 +490,23 @@ def _resolve_inheritance(raws: list[_RawDef]) -> list[DefRecord]:
       return None
     return inherit_int(parent, attr, seen)
 
+  def inherit_tuple(
+    r: _RawDef, attr: str, seen: set[str] | None = None
+  ) -> tuple[str, ...]:
+    val = getattr(r, attr)
+    if val:
+      return val
+    if r.parent_name is None:
+      return ()
+    seen = seen or set()
+    if r.parent_name in seen:
+      return ()
+    seen.add(r.parent_name)
+    parent = by_name.get(r.parent_name)
+    if parent is None:
+      return ()
+    return inherit_tuple(parent, attr, seen)
+
   out: list[DefRecord] = []
   for r in raws:
     if r.abstract or not r.def_name:
@@ -473,6 +520,7 @@ def _resolve_inheritance(raws: list[_RawDef]) -> list[DefRecord]:
       source=r.source,
       max_health=inherit_int(r, "max_health"),
       category=inherit(r, "category"),
+      cost_list=inherit_tuple(r, "cost_list"),
     ))
   return out
 
@@ -524,3 +572,34 @@ def index_to_categories(
   index: dict[str, DefRecord],
 ) -> dict[str, str]:
   return {k: v.category for k, v in index.items() if v.category}
+
+
+def _humanise_material(name: str, labels: dict[str, str]) -> str:
+  """Material def name -> readable noun. Uses the mod-aware label if
+  one exists ('Plasteel' -> 'plasteel'), else lowercases CamelCase
+  ('ComponentIndustrial' -> 'component industrial')."""
+  if name in labels and labels[name]:
+    return labels[name].lower()
+  acc: list[str] = []
+  for i, ch in enumerate(name):
+    if i > 0 and ch.isupper() and not name[i - 1].isupper():
+      acc.append(" ")
+    acc.append(ch.lower())
+  return "".join(acc) or name
+
+
+def index_to_cost_materials(
+  index: dict[str, DefRecord],
+) -> dict[str, str]:
+  """Produce {def_name: 'material1 + material2'} for any def whose
+  XML had a ``<costList>``. Materials are humanised and joined with
+  '+'. Items with no costList (or with only one ingredient that's
+  already implied by a stuff slot) are omitted."""
+  labels = index_to_labels(index)
+  out: dict[str, str] = {}
+  for def_name, rec in index.items():
+    if not rec.cost_list:
+      continue
+    parts = [_humanise_material(m, labels) for m in rec.cost_list]
+    out[def_name] = " + ".join(parts)
+  return out

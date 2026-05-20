@@ -30,6 +30,7 @@ from .mods import (
   autodetect_mod_paths,
   build_def_index_from_save,
   index_to_categories,
+  index_to_cost_materials,
   index_to_descriptions,
   index_to_labels,
   index_to_texpaths,

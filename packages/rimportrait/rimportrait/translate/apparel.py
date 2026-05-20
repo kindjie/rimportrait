@@ -80,16 +80,27 @@ def long_form_apparel_phrase(
   )
 
 
-def qualifier_for_apparel(item: ApparelItem) -> str | None:
+def qualifier_for_apparel(
+  item: ApparelItem,
+  cost_materials: dict[str, str] | None = None,
+) -> str | None:
   """Comma-joined visual qualifiers: material, color, style, condition.
 
-  Returns None when an item carries no qualifier signal. Used both for
-  the inline gear summary line and the long-form apparel block.
+  Returns None when an item carries no qualifier signal. Used both
+  for the inline gear summary line and the long-form apparel block.
+
+  When ``cost_materials`` is provided and the apparel item has no
+  runtime ``stuff`` (i.e. it's a fixed-cost def like prestige
+  cataphract armor where the def's <costList> fixes the materials),
+  the costList materials are emitted in place of the missing stuff
+  descriptor.
   """
   bits: list[str] = []
   stuff = describe_stuff(item.stuff)
   if stuff:
     bits.append(stuff)
+  elif cost_materials and item.def_name in cost_materials:
+    bits.append(cost_materials[item.def_name])
   if item.color is not None:
     bits.append(rgba_to_name(item.color))
   style = describe_style_def(item.style_def)

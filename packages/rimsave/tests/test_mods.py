@@ -67,6 +67,60 @@ def test_iter_mods_handles_missing_meta():
   assert iter_mods_from_save(save) == []
 
 
+def test_cost_list_extracted_and_sorted_bulk_first(tmp_path: Path):
+  """costList materials should be captured and ordered by amount
+  descending (so '75 Plasteel + 9 Gold' reads as 'plasteel + gold',
+  the bulk first)."""
+  from rimsave.mods import index_to_cost_materials
+  defs = """<Defs>
+    <ThingDef>
+      <defName>Apparel_PrestigeCataphractHelmet</defName>
+      <label>prestige cataphract helmet</label>
+      <costList>
+        <Gold>9</Gold>
+        <Plasteel>75</Plasteel>
+      </costList>
+    </ThingDef>
+    <ThingDef>
+      <defName>Apparel_Plain</defName>
+      <label>plain shirt</label>
+    </ThingDef>
+  </Defs>"""
+  mod = _write_mod(tmp_path / "mod_cost", "test.mod.cost", defs)
+  raws = _parse_raw_defs(mod, "test.mod.cost")
+  resolved = {r.def_name: r for r in _resolve_inheritance(raws)}
+  # Sorted bulk-first: Plasteel (75) before Gold (9).
+  assert resolved["Apparel_PrestigeCataphractHelmet"].cost_list == \
+    ("Plasteel", "Gold")
+  # No costList -> empty tuple.
+  assert resolved["Apparel_Plain"].cost_list == ()
+  # Helper produces the rendered material string.
+  index = {r.def_name: r for r in _resolve_inheritance(raws)}
+  materials = index_to_cost_materials(index)
+  assert materials["Apparel_PrestigeCataphractHelmet"] == \
+    "plasteel + gold"
+  assert "Apparel_Plain" not in materials
+
+
+def test_cost_list_ignores_xml_comments_inside(tmp_path: Path):
+  """lxml exposes comment nodes with a callable .tag attribute;
+  the costList parser must skip them."""
+  defs = """<Defs>
+    <ThingDef>
+      <defName>Apparel_Mixed</defName>
+      <costList>
+        <Steel>50</Steel>
+        <!-- a comment that lxml exposes as a node -->
+        <Cloth>20</Cloth>
+      </costList>
+    </ThingDef>
+  </Defs>"""
+  mod = _write_mod(tmp_path / "mod_mixed", "test.mod.mixed", defs)
+  raws = _parse_raw_defs(mod, "test.mod.mixed")
+  resolved = {r.def_name: r for r in _resolve_inheritance(raws)}
+  assert resolved["Apparel_Mixed"].cost_list == ("Steel", "Cloth")
+
+
 def test_inheritance_walks_parent_chain(tmp_path: Path):
   defs = """<Defs>
     <ThingDef Name="GrandparentBase" Abstract="True">

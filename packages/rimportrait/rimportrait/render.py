@@ -95,6 +95,20 @@ SINGLE_PROMPT_INSTRUCTION = (
   "direction, texture, parting, colour transition - and place that "
   "description early in the paragraph. A colour gradient should read "
   "as a clean transition, not a list of colours.\n"
+  "- Choose words carefully so each item's TECHNOLOGICAL LEVEL "
+  "matches what the source data actually says, regardless of the "
+  "chosen visual style. RimWorld colonies span tribal / medieval / "
+  "industrial / spacer / ultra / archotech tech levels - read each "
+  "item's name + materials + description and match its era. A "
+  "tribal pawn in a buckskin parka with a recurve bow is tribal; a "
+  "musketeer in mail with a matchlock is industrial; a colonist in "
+  "plasteel recon armor with a beam repeater is spacer; an "
+  "archotech eye is post-spacer. Do NOT collapse everything to a "
+  "single era - do not turn spacer armor into a medieval "
+  "'breastplate', do not turn a tribal bow into a 'rifle', do not "
+  "turn an archotech eye into a 'monocle'. The visual MEDIUM "
+  "(Renaissance painting / anime / comic / etc.) is the filter; "
+  "each item's tech level survives the filter unchanged.\n"
   "- Make the face clearly visible and the emotional focus.\n"
   "- Translate the block's personality, traits, mood, role, "
   "relationships, hediffs, and backstory into VISIBLE behavior - "
@@ -191,6 +205,16 @@ FAMILY_PROMPT_INSTRUCTION = (
   "- Hair, beard, and wielded weapon per person are defining "
   "features the image model frequently drops. Anchor them early in "
   "each person's clause with concrete structural language.\n"
+  "- Choose words carefully so each item's TECHNOLOGICAL LEVEL "
+  "matches what the source data actually says. RimWorld colonies "
+  "span tribal / medieval / industrial / spacer / ultra / archotech "
+  "tech levels - read each item's name + materials + description "
+  "per person and match its era. A tribal pawn in a buckskin parka "
+  "with a recurve bow is tribal; a colonist in plasteel recon armor "
+  "with a beam repeater is spacer. Do not collapse the family to "
+  "a single era when its members are mixed. The visual MEDIUM may "
+  "be Renaissance / anime / comic / etc., but each item's tech "
+  "level survives the style filter unchanged.\n"
   "- Block the composition spatially: who stands where, who is "
   "closer to camera, gaze directions, who looks at whom.\n"
   "- For each person: one verb (from their Pose/activity or "
@@ -277,6 +301,15 @@ ACTION_PROMPT_INSTRUCTION = (
   "image model frequently drops. Anchor them with concrete "
   "structural language - length, direction, texture, grip, "
   "colour transition - in the first half of the paragraph.\n"
+  "- Choose words carefully so each item's TECHNOLOGICAL LEVEL "
+  "matches what the source data actually says. RimWorld colonies "
+  "span tribal / medieval / industrial / spacer / ultra / archotech "
+  "tech levels - read the item's name + materials + description and "
+  "match its era. A tribal pawn fighting with a recurve bow stays "
+  "tribal; a colonist firing a beam repeater stays spacer. The "
+  "visual MEDIUM (cinematic still / anime / comic / etc.) is the "
+  "filter; the tech level of each item survives the filter "
+  "unchanged.\n"
   "- Start with the exact instant of action - what is happening "
   "right now. Draw the verb from the block's Pose/activity, "
   "Inspiration, combat-readiness signals (shoot frenzy / berserker "
@@ -473,6 +506,7 @@ def _apparel_phrase(
   it: ApparelItem,
   labels: dict[str, str] | None = None,
   carrying_infant: bool = False,
+  cost_materials: dict[str, str] | None = None,
 ) -> str:
   """Render one apparel item's inline phrase.
 
@@ -481,7 +515,7 @@ def _apparel_phrase(
   carrier signal entirely when one is present).
   """
   base = describe_apparel_item(it, labels)
-  qual = qualifier_for_apparel(it)
+  qual = qualifier_for_apparel(it, cost_materials)
   if is_baby_carrier(it.def_name) and not carrying_infant:
     qual = f"{qual}, empty" if qual else "empty"
   return f"{base} ({qual})" if qual else base
@@ -496,7 +530,9 @@ def _weapon_phrase(
 
 
 def _gear_lines(
-  p: PawnRecord, labels: dict[str, str] | None = None
+  p: PawnRecord,
+  labels: dict[str, str] | None = None,
+  cost_materials: dict[str, str] | None = None,
 ) -> list[tuple[str, str]]:
   """Split worn gear into three prominence buckets.
 
@@ -511,7 +547,10 @@ def _gear_lines(
   carrying = p.carried_infant is not None
   for it in p.apparel:
     target = utility if is_utility_apparel(it.def_name) else armor
-    target.append(_apparel_phrase(it, labels, carrying_infant=carrying))
+    target.append(_apparel_phrase(
+      it, labels, carrying_infant=carrying,
+      cost_materials=cost_materials,
+    ))
   weapons = [_weapon_phrase(w, labels) for w in p.equipment]
   out: list[tuple[str, str]] = []
   if armor:
@@ -1032,6 +1071,7 @@ def _apparel_section(
   items: Iterable[ApparelItem],
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
+  def_cost_materials: dict[str, str] | None = None,
 ) -> list[str]:
   items_list = list(items)
   rows = describe_apparel(items_list, def_labels)
@@ -1040,7 +1080,7 @@ def _apparel_section(
   out = ["Apparel visual descriptions:"]
   for item, (label, _summary) in zip(items_list, rows):
     body = long_form_apparel_phrase(item, def_descriptions, def_labels)
-    qual = qualifier_for_apparel(item)
+    qual = qualifier_for_apparel(item, def_cost_materials)
     head = f"- {label}"
     if qual:
       head += f" [{qual}]"
@@ -1056,6 +1096,7 @@ def render_portrait(
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
   def_categories: dict[str, str] | None = None,
+  def_cost_materials: dict[str, str] | None = None,
 ) -> str:
   """Build the [PORTRAIT SUBJECT] block for a single pawn."""
   name = p.label or p.nickname or p.name_full
@@ -1088,7 +1129,8 @@ def render_portrait(
     lines.extend(body)
   # Apparel — what's worn / wielded / carried, top to bottom.
   apparel = [s for s in (
-    *(_sub(label, value) for label, value in _gear_lines(p, def_labels)),
+    *(_sub(label, value)
+      for label, value in _gear_lines(p, def_labels, def_cost_materials)),
     _sub("Carrying infant in arms", _carrying_infant(p)),
     _sub("Carrying (pack/inventory)", _carrying_summary(p, def_labels)),
   ) if s]
@@ -1137,7 +1179,9 @@ def render_portrait(
     lines.extend(behavior)
   lines.extend(_ideo_block_lines(p.ideo))
   lines.extend(_map_block_lines(map_context))
-  lines.extend(_apparel_section(p.apparel, def_descriptions, def_labels))
+  lines.extend(_apparel_section(
+    p.apparel, def_descriptions, def_labels, def_cost_materials,
+  ))
   lines.append("[/PORTRAIT SUBJECT]")
   block = "\n".join(lines)
   if include_instruction:
@@ -1153,6 +1197,7 @@ def _person_block(
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
   def_categories: dict[str, str] | None = None,
+  def_cost_materials: dict[str, str] | None = None,
 ) -> list[str]:
   lines: list[str] = ["[PERSON]"]
   name = p.label or p.nickname or p.name_full
@@ -1184,7 +1229,8 @@ def _person_block(
     lines.extend(body)
   # Apparel.
   apparel = [s for s in (
-    *(_sub(label, value) for label, value in _gear_lines(p, def_labels)),
+    *(_sub(label, value)
+      for label, value in _gear_lines(p, def_labels, def_cost_materials)),
     _sub("Carrying infant in arms", _carrying_infant(p)),
     _sub("Carrying (pack/inventory)", _carrying_summary(p, def_labels)),
   ) if s]
@@ -1243,6 +1289,7 @@ def render_family(
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
   def_categories: dict[str, str] | None = None,
+  def_cost_materials: dict[str, str] | None = None,
 ) -> str:
   """Build the [FAMILY PORTRAIT SUBJECT] block.
 
@@ -1276,6 +1323,7 @@ def render_family(
   lines.extend(_person_block(
     focus, "Focus pawn (centre of the family portrait)",
     def_descriptions, def_labels, def_categories,
+    def_cost_materials,
   ))
   if members:
     lines.append("Family/direct relations from focus pawn:")
@@ -1286,7 +1334,7 @@ def render_family(
     for rel, other in members:
       lines.extend(_person_block(
         other, rel.def_name, def_descriptions, def_labels,
-        def_categories,
+        def_categories, def_cost_materials,
       ))
   lines.append("[/FAMILY PORTRAIT SUBJECT]")
   block = "\n".join(lines)
