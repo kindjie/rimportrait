@@ -206,10 +206,11 @@ Output behaviour:
   --image requires --out-dir (binary can't go to stdout) and --generate
   (image models work best on the polished paragraph, not the raw block).
 
-Optional extras:
-  pip install 'rimportrait[google]'   # google-genai SDK (text + image)
-  pip install 'rimportrait[openai]'   # openai SDK (text + image)
-  pip install 'rimportrait[llm]'      # both
+Optional extras (workspace install — rimportrait is not on PyPI):
+  uv pip install -e 'packages/rimportrait[google]'   # google-genai (text+image)
+  uv pip install -e 'packages/rimportrait[openai]'   # openai (text+image)
+  uv pip install -e 'packages/rimportrait[llm]'      # both
+  # or: uv add --dev 'rimportrait[llm]'  to persist in the workspace
 """
 
 
@@ -474,21 +475,28 @@ def _build_index(
            dict[str, str] | None,
            dict[str, str] | None,
            dict[str, str] | None,
+           dict[str, str] | None,
+           dict[str, str] | None,
            dict[str, str] | None]:
   if args.no_defs:
-    return (None, None, None, None, None)
+    return (None, None, None, None, None, None, None)
   paths = _resolve_paths(args)
   if paths.rimworld_data is None and paths.workshop_dir is None \
       and paths.mods_dir is None:
-    return (None, None, None, None, None)
+    return (None, None, None, None, None, None, None)
   index = build_def_index_from_save(save, paths)
   if not index:
-    return (None, None, None, None, None)
+    return (None, None, None, None, None, None, None)
   # Populate Save's roof/terrain shortHash -> defName lookups so
   # roof_kind / terrain_kind on PawnRecord can resolve to readable
   # labels (otherwise they'd be None even when the def index is
   # loaded).
-  from rimsave import index_to_cost_materials, register_def_short_hashes
+  from rimsave import (
+    index_to_apparel_layers,
+    index_to_cost_materials,
+    index_to_tech_levels,
+    register_def_short_hashes,
+  )
   register_def_short_hashes(save, index)
   return (
     index,  # for extractors (hair_texture_path enrichment)
@@ -496,6 +504,8 @@ def _build_index(
     index_to_labels(index),
     index_to_categories(index),
     index_to_cost_materials(index),
+    index_to_tech_levels(index),
+    index_to_apparel_layers(index),
   )
 
 
@@ -627,8 +637,8 @@ def main(argv: list[str] | None = None) -> int:
   # rather than appended to the block, so the rendered block must be
   # instruction-free.
   inst = not args.no_instruction and not args.generate
-  def_index, defs_desc, defs_label, defs_cat, defs_cost = \
-    _build_index(save, args)
+  (def_index, defs_desc, defs_label, defs_cat, defs_cost, defs_tech,
+   defs_layer) = _build_index(save, args)
   body_parts = _build_body_parts(args)
 
   try:
@@ -648,6 +658,8 @@ def main(argv: list[str] | None = None) -> int:
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
+        def_tech_levels=defs_tech,
+        def_apparel_layers=defs_layer,
       )
       text = _maybe_generate(args, block, "family")
       _emit(args.out_dir, text, focus, "family")
@@ -669,6 +681,8 @@ def main(argv: list[str] | None = None) -> int:
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
+        def_tech_levels=defs_tech,
+        def_apparel_layers=defs_layer,
       )
       text = _maybe_generate(args, block, "portrait")
       _emit(args.out_dir, text, p, "portrait")
@@ -685,6 +699,8 @@ def main(argv: list[str] | None = None) -> int:
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
+        def_tech_levels=defs_tech,
+        def_apparel_layers=defs_layer,
       )
       text = _maybe_generate(args, block, "portrait")
       _emit(args.out_dir, text, p, "portrait")

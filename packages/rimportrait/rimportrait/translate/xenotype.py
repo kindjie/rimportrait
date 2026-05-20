@@ -20,6 +20,17 @@ from rimsave.records import Gene
 from ._common import humanise, label_for
 
 
+def _first_sentence(text: str) -> str:
+  """Return everything up to the first sentence terminator
+  (``.``, ``!``, or ``?`` followed by whitespace or end-of-string).
+  Falls back to the full text when no terminator is found."""
+  s = text.strip()
+  for i, ch in enumerate(s):
+    if ch in ".!?" and (i + 1 == len(s) or s[i + 1].isspace()):
+      return s[: i + 1]
+  return s
+
+
 def describe_xenotype(
   name: str | None,
   descriptions: dict[str, str] | None = None,
@@ -30,9 +41,11 @@ def describe_xenotype(
     return None
   # Description-first, label-second; only consult labels/descriptions
   # before the gene-list fallback so a real mod-authored description
-  # wins over enumerating the xenogenes.
+  # wins over enumerating the xenogenes. Long lore descriptions are
+  # truncated to the first sentence - the image model only needs the
+  # visual cue, not the multi-paragraph history.
   if descriptions and name in descriptions:
-    return descriptions[name]
+    return _first_sentence(descriptions[name])
   if labels and name in labels:
     return labels[name]
   if genes is not None:

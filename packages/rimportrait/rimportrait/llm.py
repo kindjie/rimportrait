@@ -50,7 +50,8 @@ def openai_complete(system: str, user: str, model: str) -> str:
   except ImportError as e:
     raise RuntimeError(
       "openai package not installed; "
-      "pip install 'rimportrait[openai]'"
+      "uv pip install -e 'packages/rimportrait[openai]' "
+      "(or `uv add --dev 'rimportrait[openai]'`)"
     ) from e
   client = OpenAI()
   resp = client.chat.completions.create(
@@ -73,7 +74,8 @@ def google_complete(system: str, user: str, model: str) -> str:
   except ImportError as e:
     raise RuntimeError(
       "google-genai package not installed; "
-      "pip install 'rimportrait[google]'"
+      "uv pip install -e 'packages/rimportrait[google]' "
+      "(or `uv add --dev 'rimportrait[google]'`)"
     ) from e
   client = genai.Client()
   resp = client.models.generate_content(
@@ -137,7 +139,8 @@ def openai_image(prompt: str, model: str, *, size: str) -> tuple[bytes, str]:
   except ImportError as e:
     raise RuntimeError(
       "openai package not installed; "
-      "pip install 'rimportrait[openai]'"
+      "uv pip install -e 'packages/rimportrait[openai]' "
+      "(or `uv add --dev 'rimportrait[openai]'`)"
     ) from e
   client = OpenAI()
   resp = client.images.generate(model=model, prompt=prompt, size=size)
@@ -156,7 +159,8 @@ def google_image(
   except ImportError as e:
     raise RuntimeError(
       "google-genai package not installed; "
-      "pip install 'rimportrait[google]'"
+      "uv pip install -e 'packages/rimportrait[google]' "
+      "(or `uv add --dev 'rimportrait[google]'`)"
     ) from e
 
   def _config(with_aspect: bool):

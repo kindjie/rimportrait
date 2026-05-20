@@ -15,15 +15,45 @@ from ._common import label_for
 
 
 # Substring patterns that mark a gene as purely mechanical (no
-# visual or bearing implication). Skip-list shape, not allow-list, so
-# modded genes aren't silently dropped from prompts.
+# visual implication). Skip-list shape so modded genes aren't
+# silently dropped — only obvious internal/metabolic/skill genes
+# are filtered. Visible body-mod genes (PiercingSpine, LongjumpLegs,
+# Tinderskin, DarkVision, ScarLess, etc.) stay in the output.
 _IGNORED_PATTERNS: tuple[str, ...] = (
+  # Immune / metabolic / sleep
   "Immunity",
   "ToxResist",
   "ToxResistance",
   "ChemicalDependency",
   "Sleep_",
-  "Hemogenic",  # mechanic; sanguophage visuals come from xenotype
+  "LowSleep",
+  "VeryLowSleep",
+  "ArchiteMetabolism",
+  # Sanguophage mechanics — xenotype line already conveys the visual
+  "Hemogenic",
+  "HemogenDrain",
+  "Bloodfeeder",
+  "Coagulate",
+  "GeneImplanter",
+  "Deathrest",
+  # Sense / mental — no visible correlate
+  "PsychicSensitivity",
+  "PsychicAbility",
+  "PsySensitive",
+  "Pyrophobia",
+  "UVSensitivity",
+  # Physiology that doesn't change silhouette
+  "WoundHealing",
+  "Aggressive",
+  "Robust",
+  "FastRunner",
+  "StrongMeleeDamage",
+  "NonSenescent",
+  # Skill aptitudes (numeric bonuses, no visual)
+  "AptitudeStrong",
+  "AptitudeBad",
+  "AptitudeNeutral",
+  "AptitudeLearning",
 )
 
 

@@ -362,6 +362,17 @@ class DefRecord:
   # prestige cataphract uses Plasteel+Gold, royal regalia uses
   # Cloth+Gold, etc. Tuple is (def_name, ...) preserving XML order.
   cost_list: tuple[str, ...] = ()
+  # RimWorld's <techLevel> tag, lowercased. One of:
+  # animal / neolithic / medieval / industrial / spacer / ultra /
+  # archotech. ParentName-inherited (most spacer apparel inherits from
+  # ArmorMachineable / ApparelMakeableBase which set techLevel=Spacer).
+  tech_level: str | None = None
+  # Apparel <layers> entries (e.g. ("Middle", "Shell")) - preserves
+  # the order written in XML. Empty for non-apparel defs. Used by the
+  # render layer to order worn items outer-to-inner and to surface
+  # the silhouette layer (Shell / Middle / OnSkin / Belt / Overhead /
+  # EyeCover).
+  apparel_layers: tuple[str, ...] = ()
 
 
 @dataclass
@@ -378,6 +389,8 @@ class _RawDef:
   max_health: int | None = None
   category: str | None = None
   cost_list: tuple[str, ...] = ()
+  tech_level: str | None = None
+  apparel_layers: tuple[str, ...] = ()
 
 
 def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
@@ -414,6 +427,18 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
           max_health = None
       category_raw = el.findtext("category")
       category = category_raw.strip() if category_raw else None
+      tech_raw = el.findtext("techLevel")
+      tech_level = tech_raw.strip().lower() if tech_raw else None
+      apparel_layers: tuple[str, ...] = ()
+      layers_el = el.find("apparel/layers")
+      if layers_el is not None:
+        layers_acc: list[str] = []
+        for li in layers_el:
+          if not isinstance(li.tag, str):
+            continue
+          if (li.text or "").strip():
+            layers_acc.append(li.text.strip())
+        apparel_layers = tuple(layers_acc)
       cost_el = el.find("costList")
       cost_list: tuple[str, ...] = ()
       if cost_el is not None:
@@ -448,6 +473,8 @@ def _parse_raw_defs(mod_root: Path, source: str) -> list[_RawDef]:
         max_health=max_health,
         category=category,
         cost_list=cost_list,
+        tech_level=tech_level,
+        apparel_layers=apparel_layers,
       ))
   return out
 
@@ -521,6 +548,8 @@ def _resolve_inheritance(raws: list[_RawDef]) -> list[DefRecord]:
       max_health=inherit_int(r, "max_health"),
       category=inherit(r, "category"),
       cost_list=inherit_tuple(r, "cost_list"),
+      tech_level=inherit(r, "tech_level"),
+      apparel_layers=inherit_tuple(r, "apparel_layers"),
     ))
   return out
 
@@ -586,6 +615,68 @@ def _humanise_material(name: str, labels: dict[str, str]) -> str:
       acc.append(" ")
     acc.append(ch.lower())
   return "".join(acc) or name
+
+
+# RimWorld apparel layers ordered outer -> inner for rendering. Items
+# higher in this list visually sit on top. Belt and the head/eye
+# layers are separate visual channels but their relative ordering
+# against torso layers doesn't matter for outer-to-inner sorting; we
+# place them above Shell so accessories like utility belts and
+# helmets are listed before the torso shell.
+_LAYER_OUTER_TO_INNER: tuple[str, ...] = (
+  "Overhead",
+  "EyeCover",
+  "Belt",
+  "Shell",
+  "Middle",
+  "OnSkin",
+)
+
+
+def outermost_layer(layers: tuple[str, ...]) -> str | None:
+  """Pick the visually outermost layer from an apparel def's layer
+  list. Unknown layer names (mods can define their own) sort to the
+  inside, last."""
+  if not layers:
+    return None
+  ranks = {name: i for i, name in enumerate(_LAYER_OUTER_TO_INNER)}
+  unknown_rank = len(_LAYER_OUTER_TO_INNER)
+  return min(layers, key=lambda L: ranks.get(L, unknown_rank))
+
+
+def layer_rank(layer: str | None) -> int:
+  """Rank for sorting; lower = outer. None / unknown sort last."""
+  if layer is None:
+    return len(_LAYER_OUTER_TO_INNER) + 1
+  ranks = {name: i for i, name in enumerate(_LAYER_OUTER_TO_INNER)}
+  return ranks.get(layer, len(_LAYER_OUTER_TO_INNER))
+
+
+def index_to_apparel_layers(
+  index: dict[str, DefRecord],
+) -> dict[str, str]:
+  """Return {def_name: outermost_layer} for any def whose XML carried
+  an <apparel><layers> entry. Used by the render layer to surface the
+  silhouette layer on each worn item and sort the apparel line
+  outer-to-inner."""
+  out: dict[str, str] = {}
+  for def_name, rec in index.items():
+    layer = outermost_layer(rec.apparel_layers)
+    if layer is not None:
+      out[def_name] = layer
+  return out
+
+
+def index_to_tech_levels(
+  index: dict[str, DefRecord],
+) -> dict[str, str]:
+  """Return {def_name: tech_level} for every def carrying a techLevel.
+
+  Values are lower-cased: ``neolithic``, ``medieval``, ``industrial``,
+  ``spacer``, ``ultra``, ``archotech`` (plus ``animal``). Used by the
+  render layer to tag each apparel/weapon with its authoritative era
+  so the LLM doesn't have to infer from the def name."""
+  return {k: v.tech_level for k, v in index.items() if v.tech_level}
 
 
 def index_to_cost_materials(

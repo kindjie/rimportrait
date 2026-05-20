@@ -22,10 +22,13 @@ from ._common import label_for
 _HEDIFF_PREFIXES: tuple[str, ...] = ("Hediff_",)
 
 
-# Skip-list of obviously-mechanical hediff patterns. Substring match
-# so mod variants are caught alongside vanilla; allow-list shape was
-# deliberately retired so modded body changes aren't dropped silently.
+# Skip-list of obviously-non-visual hediff patterns. Substring match
+# so mod variants are caught alongside vanilla. Visible body changes
+# (BionicEye, PowerClaw, ScarMild, missing limbs, etc.) stay in the
+# output; only internal organs / brain implants / metabolic states
+# / numeric tolerances are filtered.
 _IGNORED_PATTERNS: tuple[str, ...] = (
+  # Numeric / mechanical tolerances and saving throws
   "Immunity",
   "Tolerance",
   "Dependency",
@@ -34,11 +37,69 @@ _IGNORED_PATTERNS: tuple[str, ...] = (
   "Catharsis",
   "Withdrawal",
   "Pregnant",
+  # Internal organ implants — no external silhouette change
+  "GastroAnalyzer",
+  "NuclearStomach",
+  "DetoxifierKidney",
+  "DetoxifierLung",
+  "ScanHeart",
+  "Joywire",
+  "AestheticNose",
+  "AestheticShaper",
+  "LearningAssistant",
+  "NeuralCalculator",
+  # Brain implants / psy-class hediffs
+  "Psylink",
+  "Psychic",  # PsychicSpeed, PsychicSensitivity, PsychicReader, ...
+  # Transient/metabolic states with no visible cue
+  "Lactating",
+  "Glucosoid",
+  "GenesRegrowing",
+  "Regrowing",
+  "Regenerat",  # Regenerating, Regeneration*
+  "Xenogerm",   # XenogermReplicating - transient gene-rewrite state
+  # RimTalk artifact hediff (not a real body change)
+  "Persona",
 )
 
 
 def _is_ignored(def_name: str) -> bool:
   return any(p in def_name for p in _IGNORED_PATTERNS)
+
+
+# Body parts whose hediffs don't change the silhouette (internal
+# organs + tiny appendages buried under clothing/armor). A hediff
+# attached to one of these parts is filtered out regardless of the
+# def name — catches modded implants the def-name skip-list misses.
+_INVISIBLE_BODY_PARTS: frozenset[str] = frozenset({
+  # Internal organs
+  "Brain", "Stomach", "Liver", "Kidney", "Lung", "Heart", "Spleen",
+  "Intestine", "Intestines", "Pancreas",
+  # Tiny appendages hidden by clothing/armor
+  "LittleToe", "FourthToe", "MiddleToe", "SecondToe", "BigToe",
+  "Toe", "Pinky", "RingFinger", "MiddleFinger", "IndexFinger",
+  "Thumb", "Finger",
+})
+
+
+def _has_invisible_part(body_part: str | None) -> bool:
+  """Detect hediffs attached to organs / digits that don't affect
+  the portrait silhouette. Matches case-insensitively against a
+  curated set so 'left fourth toe' and 'Stomach' both filter out."""
+  if not body_part:
+    return False
+  # Normalise: 'left fourth toe' -> 'FourthToe' (the canonical
+  # RimWorld body-part def slug). We compare against both the raw
+  # string and a CamelCase normalised form.
+  candidates = {body_part}
+  parts = body_part.replace("-", " ").split()
+  if parts:
+    # Drop side prefixes (left/right/upper/lower); keep the noun.
+    side = {"left", "right", "upper", "lower"}
+    keep = [w for w in parts if w.lower() not in side]
+    candidates.add("".join(w.capitalize() for w in keep))
+    candidates.add(keep[-1].capitalize() if keep else "")
+  return any(c in _INVISIBLE_BODY_PARTS for c in candidates)
 
 
 def is_pilot_state(def_name: str) -> bool:
@@ -100,6 +161,8 @@ def describe_hediffs(
     if is_shambler_state(h.def_name):
       continue
     if is_pilot_state(h.def_name):
+      continue
+    if _has_invisible_part(h.body_part):
       continue
     out.append(_format(h, labels))
   return out

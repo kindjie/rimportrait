@@ -121,6 +121,108 @@ def test_cost_list_ignores_xml_comments_inside(tmp_path: Path):
   assert resolved["Apparel_Mixed"].cost_list == ("Steel", "Cloth")
 
 
+def test_apparel_layers_extracted_and_outermost_picked(tmp_path: Path):
+  """<apparel><layers> entries are captured in XML order; the
+  outermost helper picks the visually-outer layer per RimWorld's
+  Overhead/EyeCover/Belt/Shell/Middle/OnSkin ordering."""
+  from rimsave.mods import index_to_apparel_layers, outermost_layer
+  defs = """<Defs>
+    <ThingDef>
+      <defName>Apparel_FlakVest</defName>
+      <apparel>
+        <layers>
+          <li>Middle</li>
+          <li>Shell</li>
+        </layers>
+      </apparel>
+    </ThingDef>
+    <ThingDef>
+      <defName>Apparel_Helmet</defName>
+      <apparel>
+        <layers><li>Overhead</li></layers>
+      </apparel>
+    </ThingDef>
+    <ThingDef>
+      <defName>Apparel_Shirt</defName>
+      <apparel>
+        <layers><li>OnSkin</li></layers>
+      </apparel>
+    </ThingDef>
+    <ThingDef>
+      <defName>Plain</defName>
+    </ThingDef>
+  </Defs>"""
+  mod = _write_mod(tmp_path / "mod_layers", "test.mod.layers", defs)
+  raws = _parse_raw_defs(mod, "test.mod.layers")
+  index = {r.def_name: r for r in _resolve_inheritance(raws)}
+  assert index["Apparel_FlakVest"].apparel_layers == ("Middle", "Shell")
+  assert index["Plain"].apparel_layers == ()
+  # Shell is outer than Middle.
+  assert outermost_layer(("Middle", "Shell")) == "Shell"
+  helper = index_to_apparel_layers(index)
+  assert helper == {
+    "Apparel_FlakVest": "Shell",
+    "Apparel_Helmet": "Overhead",
+    "Apparel_Shirt": "OnSkin",
+  }
+
+
+def test_apparel_layers_inherited_from_parent(tmp_path: Path):
+  defs = """<Defs>
+    <ThingDef Name="ApparelArmorBase" Abstract="True">
+      <apparel>
+        <layers><li>Middle</li><li>Shell</li></layers>
+      </apparel>
+    </ThingDef>
+    <ThingDef ParentName="ApparelArmorBase">
+      <defName>Apparel_PowerArmor</defName>
+    </ThingDef>
+  </Defs>"""
+  mod = _write_mod(tmp_path / "mod_inh", "test.mod.layers.inh", defs)
+  raws = _parse_raw_defs(mod, "test.mod.layers.inh")
+  index = {r.def_name: r for r in _resolve_inheritance(raws)}
+  assert index["Apparel_PowerArmor"].apparel_layers == ("Middle", "Shell")
+
+
+def test_tech_level_extracted_and_inherited(tmp_path: Path):
+  """techLevel comes from the def's <techLevel> tag, with
+  ParentName chains followed for abstract bases (most spacer apparel
+  inherits techLevel from ArmorMachineable / ApparelMakeableBase)."""
+  from rimsave.mods import index_to_tech_levels
+  defs = """<Defs>
+    <ThingDef Name="ArmorMachineable" Abstract="True">
+      <techLevel>Spacer</techLevel>
+    </ThingDef>
+    <ThingDef ParentName="ArmorMachineable">
+      <defName>Apparel_PowerArmor</defName>
+      <label>cataphract armor</label>
+    </ThingDef>
+    <ThingDef>
+      <defName>Bow_Recurve</defName>
+      <label>recurve bow</label>
+      <techLevel>Neolithic</techLevel>
+    </ThingDef>
+    <ThingDef>
+      <defName>Apparel_NoTech</defName>
+      <label>shirt</label>
+    </ThingDef>
+  </Defs>"""
+  mod = _write_mod(tmp_path / "mod_tech", "test.mod.tech", defs)
+  raws = _parse_raw_defs(mod, "test.mod.tech")
+  index = {r.def_name: r for r in _resolve_inheritance(raws)}
+  # Direct tag, lowercased.
+  assert index["Bow_Recurve"].tech_level == "neolithic"
+  # Inherited from abstract parent.
+  assert index["Apparel_PowerArmor"].tech_level == "spacer"
+  # Missing tag stays None and is omitted from the helper map.
+  assert index["Apparel_NoTech"].tech_level is None
+  tech = index_to_tech_levels(index)
+  assert tech == {
+    "Apparel_PowerArmor": "spacer",
+    "Bow_Recurve": "neolithic",
+  }
+
+
 def test_inheritance_walks_parent_chain(tmp_path: Path):
   defs = """<Defs>
     <ThingDef Name="GrandparentBase" Abstract="True">

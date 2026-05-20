@@ -75,9 +75,28 @@ def long_form_apparel_phrase(
   descriptions: dict[str, str] | None = None,
   labels: dict[str, str] | None = None,
 ) -> str:
-  return description_for(
+  """Return the def's description truncated to its first sentence.
+
+  The full RimWorld description is gameplay lore ("Heavy layered
+  plasteel-weave plates with solid ablative coatings stop all but
+  the most well-aimed or powerful attacks. Neuro-memetic assistors
+  prevent the suit's massive weight from immobilizing the wearer
+  entirely, but the suit is still quite cumbersome.") — the first
+  sentence carries the visual ("what it is"); subsequent sentences
+  describe what it does in-game and don't help the image model.
+  """
+  full = description_for(
     item.def_name, descriptions, labels, _APPAREL_PREFIXES
   )
+  return _first_sentence(full)
+
+
+def _first_sentence(text: str) -> str:
+  s = text.strip()
+  for i, ch in enumerate(s):
+    if ch in ".!?" and (i + 1 == len(s) or s[i + 1].isspace()):
+      return s[: i + 1]
+  return s
 
 
 def qualifier_for_apparel(

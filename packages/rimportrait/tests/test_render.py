@@ -93,19 +93,21 @@ def test_portrait_contains_identity():
 
 def test_portrait_includes_hair_style_and_color():
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
-  # Hair label + texture path are emitted as game data; the curated
-  # visual phrase has been retired per the data-first principle.
+  # Hair style label is emitted; the RimWorld texture path was
+  # retired (internal asset path, no value to the image model).
   assert "Hair style: SD Zayne" in out
-  assert "Hair texture path: Hairs/fluffySidePartS" in out
-  assert "very dark charcoal / near-black" in out
+  assert "Hair texture path:" not in out
+  # Color name is emitted without the RGBA tuple prefix.
+  assert "Hair/base beard color: very dark charcoal / near-black" in out
 
 
 def test_portrait_includes_gradient_hair():
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
   assert "Hair gradient: enabled" in out
   assert "bright cyan / aqua / turquoise" in out
-  # Gradient mask is emitted as the raw RimWorld texture path.
-  assert "GradientHair/MaskBMidHigh" in out
+  # Gradient mask def name was dropped (internal asset path, no
+  # value to the image model).
+  assert "GradientHair/" not in out
 
 
 def test_portrait_includes_beard_and_tattoos():
@@ -168,14 +170,13 @@ def test_portrait_renders_ideology_style_and_memes_raw():
     ),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  # Style categories are emitted with priority verbatim, no curated
-  # phrasing (the downstream LLM does the translation step).
-  assert (
-    "Ideology style aesthetic: Techist (priority 4), Rustic (priority 2)"
-  ) in out
-  assert (
-    "Ideology memes: Structure_Archist, Loyalist, Transhumanist"
-  ) in out
+  # Style categories: name-only (priority numbers dropped — they
+  # don't help the image model decide weighting; the ordering of
+  # the list already encodes precedence).
+  assert "Ideology style aesthetic: Techist, Rustic" in out
+  # Memes: structure-meme prefix (`Structure_`) stripped from the
+  # first meme so the LLM sees the readable identity.
+  assert "Ideology memes: Archist, Loyalist, Transhumanist" in out
 
 
 def test_portrait_omits_ideology_style_and_memes_when_empty():
@@ -191,11 +192,13 @@ def test_portrait_omits_ideology_style_and_memes_when_empty():
   assert "Ideology memes:" not in out
 
 
-def test_portrait_wealth_tier_is_descriptive_not_numeric():
+def test_portrait_omits_wealth_context():
+  """Wealth context was dropped — low signal for an image prompt
+  and already implied by apparel materials. The block must NOT
+  emit a Wealth/Situation line."""
   out = render_portrait(_sample_pawn(), _map(), include_instruction=False)
-  assert "prosperous colony" in out
-  assert "350000" not in out
-  assert "350,000" not in out
+  assert "Wealth context" not in out
+  assert "Situation/threat context" not in out
 
 
 def test_portrait_favorite_color_translated():
@@ -252,7 +255,10 @@ def test_portrait_surfaces_apparel_stuff_color_and_style():
   )
 
 
-def test_carrying_line_lists_inventory_items_distinct_from_equipped():
+def test_inventory_is_omitted_and_wielded_weapon_stays_distinct():
+  """Pack inventory was dropped (rarely visible in a portrait).
+  The wielded weapon stays on its own labeled line so it's never
+  confused with stowed gear."""
   pawn = PawnRecord(
     pawn_id="102",
     name_full="Sup Plier",
@@ -265,19 +271,11 @@ def test_carrying_line_lists_inventory_items_distinct_from_equipped():
     ),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  # Wielded weapon is on its own labeled line (humanised def name,
-  # since no labels dict is threaded in this test); pack items appear
-  # under the Carrying line; the two must not mix.
   assert "Wielded weapon: assault rifle" in out
-  assert (
-    "Carrying (pack/inventory): 3× meal simple, "
-    "12× shell high explosive"
-  ) in out
-  weapon_line = [
-    ln for ln in out.splitlines() if ln.lstrip("- ").startswith("Wielded weapon:")
-  ][0]
-  assert "meal simple" not in weapon_line
-  assert "shell high explosive" not in weapon_line
+  # Inventory line is no longer emitted.
+  assert "Carrying (pack/inventory):" not in out
+  assert "meal simple" not in out
+  assert "shell high explosive" not in out
 
 
 def test_gear_lines_split_armor_utility_and_weapon():
@@ -326,6 +324,98 @@ def test_gear_lines_split_armor_utility_and_weapon():
   assert "charge lance" not in utility_line
 
 
+def test_apparel_sorted_outer_to_inner_with_layer_tags():
+  """When def_apparel_layers is threaded in, the Worn line lists
+  items from outermost (Shell) to innermost (OnSkin) regardless of
+  extraction order, and each carries a ``[<layer>-layer]`` tag so
+  the LLM knows what hides what."""
+  pawn = PawnRecord(
+    pawn_id="600",
+    name_full="Stack Order",
+    label="Stack",
+    role="colonist",
+    apparel=(
+      ApparelItem("Apparel_CollarShirt", "collar shirt"),
+      ApparelItem("Apparel_Corset", "corset"),
+      ApparelItem("Apparel_PowerArmor", "cataphract armor"),
+    ),
+  )
+  layers = {
+    "Apparel_CollarShirt": "OnSkin",
+    "Apparel_Corset": "Middle",
+    "Apparel_PowerArmor": "Shell",
+  }
+  out = render_portrait(
+    pawn, None, include_instruction=False,
+    def_apparel_layers=layers,
+  )
+  worn = [
+    ln for ln in out.splitlines()
+    if ln.lstrip("- ").startswith("Worn armor/clothing:")
+  ][0]
+  # Outer (Shell) first, then Middle, then OnSkin.
+  shell_idx = worn.index("cataphract armor")
+  middle_idx = worn.index("corset")
+  inner_idx = worn.index("collar shirt")
+  assert shell_idx < middle_idx < inner_idx
+  assert "[shell-layer]" in worn
+  assert "[middle-layer]" in worn
+  assert "[onskin-layer]" in worn
+
+
+def test_tech_level_tag_appears_on_apparel_and_weapons():
+  """When def_tech_levels is threaded in, each apparel/weapon line
+  carries a ``[<level>-tech]`` tag so the LLM can match vocabulary
+  to the item's authoritative era without guessing from the name."""
+  pawn = PawnRecord(
+    pawn_id="500",
+    name_full="Tech Tagged",
+    label="Tagged",
+    role="colonist",
+    apparel=(
+      ApparelItem("Apparel_PowerArmor", "cataphract armor"),
+      ApparelItem("Apparel_Parka", "parka"),
+    ),
+    equipment=(Weapon("Gun_ChargeLance", "charge lance"),),
+  )
+  tech = {
+    "Apparel_PowerArmor": "spacer",
+    "Apparel_Parka": "industrial",
+    "Gun_ChargeLance": "spacer",
+  }
+  out = render_portrait(
+    pawn, None, include_instruction=False,
+    def_tech_levels=tech,
+  )
+  assert "cataphract armor [spacer-tech]" in out
+  assert "parka [industrial-tech]" in out
+  assert "charge lance [spacer-tech]" in out
+
+
+def test_tech_level_tag_absent_when_index_missing():
+  """Without a tech-levels map, no tag is appended (back-compat with
+  callers that haven't built a def index)."""
+  pawn = PawnRecord(
+    pawn_id="501",
+    name_full="No Tech",
+    label="NoTech",
+    role="colonist",
+    apparel=(ApparelItem("Apparel_PowerArmor", "cataphract armor"),),
+    equipment=(Weapon("Gun_ChargeLance", "charge lance"),),
+  )
+  out = render_portrait(pawn, None, include_instruction=False)
+  # No tag should be rendered on the actual apparel/weapon lines.
+  # Section guidance prose mentions ``[<tech>-tech]`` literally as
+  # an example, so we check the worn/weapon lines specifically.
+  worn = [
+    ln for ln in out.splitlines()
+    if ln.lstrip("- ").startswith(("Worn armor/clothing:",
+                                    "Wielded weapon:"))
+  ]
+  for ln in worn:
+    assert "-tech]" not in ln
+
+
 def test_gear_lines_omit_empty_buckets():
   unarmed = PawnRecord(
     pawn_id="105",
@@ -351,85 +441,19 @@ def test_carrying_line_omitted_when_inventory_empty():
   assert "Carrying" not in out
 
 
-def test_abilities_line_renders_all_def_names_with_humanised_fallback():
+def test_abilities_and_psyfocus_are_omitted():
+  """Abilities and psyfocus were dropped — they don't change the
+  portrait silhouette and were burning tokens."""
   pawn = PawnRecord(
     pawn_id="800",
     name_full="Caster",
     label="Caster",
     role="colonist",
     abilities=("Bloodfeed", "Chunkskip", "WordOfSerenity"),
-  )
-  out = render_portrait(pawn, None, include_instruction=False)
-  assert "Abilities: bloodfeed, chunkskip, word of serenity" in out
-
-
-def test_abilities_line_threads_mod_labels():
-  pawn = PawnRecord(
-    pawn_id="801",
-    name_full="Caster",
-    label="Caster",
-    role="colonist",
-    abilities=("Chunkskip", "Neuroquake"),
-  )
-  labels = {"Chunkskip": "chunk skip", "Neuroquake": "neuroquake"}
-  out = render_portrait(
-    pawn, None, include_instruction=False, def_labels=labels
-  )
-  assert "Abilities: chunk skip, neuroquake" in out
-
-
-def test_abilities_line_omitted_when_empty():
-  pawn = PawnRecord(
-    pawn_id="802",
-    name_full="Plain",
-    label="Plain",
-    role="colonist",
-  )
-  out = render_portrait(pawn, None, include_instruction=False)
-  assert "Abilities:" not in out
-
-
-def test_psyfocus_line_renders_band_and_percentage():
-  pawn = PawnRecord(
-    pawn_id="803",
-    name_full="Caster",
-    label="Caster",
-    role="colonist",
-    abilities=("Beckon",),
     psyfocus=0.75,
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  assert "Psyfocus: high (75%)" in out
-
-
-def test_psyfocus_band_thresholds():
-  cases = [
-    (0.97, "full"),
-    (0.80, "high"),
-    (0.55, "moderate"),
-    (0.30, "low"),
-    (0.10, "depleted"),
-  ]
-  for value, band in cases:
-    pawn = PawnRecord(
-      pawn_id=f"850-{value}",
-      name_full="Caster", label="Caster", role="colonist",
-      psyfocus=value,
-    )
-    out = render_portrait(pawn, None, include_instruction=False)
-    assert f"Psyfocus: {band}" in out, (value, band, out)
-
-
-def test_psyfocus_omitted_when_none():
-  pawn = PawnRecord(
-    pawn_id="804",
-    name_full="No Cast",
-    label="No Cast",
-    role="colonist",
-    abilities=("Bloodfeed",),  # xenotype ability, not a psycast
-    psyfocus=None,
-  )
-  out = render_portrait(pawn, None, include_instruction=False)
+  assert "Abilities:" not in out
   assert "Psyfocus:" not in out
 
 
@@ -541,38 +565,18 @@ def test_bonded_animals_line_omitted_when_empty():
   assert "Bonded animals:" not in out
 
 
-def test_connections_line_groups_and_counts_thing_defs():
+def test_connections_line_is_always_omitted():
+  """Connections (Gauranlen tree / dryad links) were dropped —
+  they're not visible on the pawn."""
   pawn = PawnRecord(
     pawn_id="980",
     name_full="Tree Friend",
     label="Tree",
     role="colonist",
-    connections=(
-      "Plant_TreeGauranlen",
-      "Dryad",
-      "Dryad",
-      "Dryad",
-    ),
+    connections=("Plant_TreeGauranlen", "Dryad"),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  assert (
-    "Connections: dryad × 3, plant tree gauranlen" in out
-  )
-
-
-def test_connections_line_threads_mod_labels():
-  pawn = PawnRecord(
-    pawn_id="981",
-    name_full="Tree Friend",
-    label="Tree",
-    role="colonist",
-    connections=("Plant_TreeGauranlen",),
-  )
-  labels = {"Plant_TreeGauranlen": "gauranlen tree"}
-  out = render_portrait(
-    pawn, None, include_instruction=False, def_labels=labels
-  )
-  assert "Connections: gauranlen tree" in out
+  assert "Connections:" not in out
 
 
 def test_connections_line_omitted_when_empty():
@@ -1232,9 +1236,10 @@ def test_royal_title_renders_label_override_when_provided():
   out = render_portrait(
     pawn, None, include_instruction=False, def_labels=labels
   )
-  assert (
-    "Royal title: Count - archon, of Faction Alpha" in out
-  )
+  # Resolved Empire/mod label wins over the def name; def-name
+  # prefix dropped to save tokens.
+  assert "Royal title: archon of Faction Alpha" in out
+  assert "Count" not in out
 
 
 def test_royal_title_falls_back_to_def_name_without_labels():
@@ -1252,7 +1257,7 @@ def test_royal_title_falls_back_to_def_name_without_labels():
     ),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  assert "Royal title: Knight, of Faction Alpha" in out
+  assert "Royal title: Knight of Faction Alpha" in out
 
 
 def test_royal_title_omitted_when_pawn_has_no_titles():
@@ -1279,7 +1284,7 @@ def test_multiple_royal_titles_render_semicolon_joined():
   )
   out = render_portrait(pawn, None, include_instruction=False)
   assert (
-    "Royal title: Count, of Empire A; Baron, of Empire B" in out
+    "Royal title: Count of Empire A; Baron of Empire B" in out
   )
 
 

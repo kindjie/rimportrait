@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from rimsave.colors import describe_rgba
+from rimsave.colors import rgba_to_name
 from rimsave.records import (
   ApparelItem,
   BondedAnimal,
@@ -23,7 +23,7 @@ from rimsave.records import (
   RoyalTitle,
   Weapon,
 )
-from rimsave.wealth import wealth_tier
+from rimsave.mods import layer_rank
 from .translate.apparel import (
   describe_apparel,
   describe_apparel_item,
@@ -34,7 +34,7 @@ from .translate.apparel import (
 )
 from .translate.favorite_color import describe_favorite_color
 from .translate.genes import describe_genes
-from .translate.hair import describe_gradient_mask, describe_hair_style
+from .translate.hair import describe_hair_style
 from .translate._common import description_for, humanise
 from .translate.hediffs import (
   describe_chemical_state,
@@ -42,145 +42,286 @@ from .translate.hediffs import (
   describe_pilot_state,
   describe_shambler_state,
 )
-from .translate.inventory import describe_inventory
 from .translate.weapons import describe_weapon, qualifier_for_weapon
 from .translate.xenotype import describe_xenotype
 
 
-SINGLE_PROMPT_INSTRUCTION = (
+# --- shared instruction fragments ------------------------------------
+#
+# The three INSTRUCTION constants below (SINGLE / FAMILY / ACTION)
+# share ~60% of their prose. Centralising the truly identical pieces
+# here keeps edits in one place; per-mode wording stays inline.
+
+_PREAMBLE = (
   "You write image-generation prompts for modern multimodal image "
   "models such as gpt-image-2 and gemini-3-pro-image-preview.\n\n"
-  "Task:\n"
-  "Given the [PORTRAIT SUBJECT] block below, produce one polished "
-  "image-generation prompt for a grounded cinematic portrait of "
-  "that single RimWorld pawn.\n\n"
-  "Output format:\n"
-  "- One paragraph only.\n"
-  "- 90-220 words preferred.\n"
-  "- No JSON.\n"
-  "- No bullet points.\n"
-  "- No labels like 'Subject:' or 'Style:'.\n"
-  "- Do not generate multiple options.\n"
-  "- The final output must be directly usable as an image-generation "
-  "prompt.\n\n"
-  "Core goal:\n"
-  "Create a believable portrait of a real person, not a poster, "
-  "character sheet, fashion shoot, game screenshot, trading card, "
-  "or generic concept-art lineup.\n\n"
-  "Prompt content:\n"
-  "- Start with the portrait subject and framing (head-and-shoulders, "
-  "bust, half-body, three-quarter portrait, or full-body portrait). "
-  "Open with 'Portrait of a [age]-year-old [role/identity], ...' - "
-  "do NOT include the pawn's name in the prompt; image models don't "
-  "read names visually and themed nicknames can pull weird "
-  "associations. The name is for filenames and identification only.\n"
-  "- TRANSLATE RimWorld game-specific terms into VISUAL descriptors. "
-  "The image model does not know what 'Sanguophage', 'Yttakin', "
-  "'Hussar', 'Impid', 'Genie', 'Pigskin', 'Wasterhound' (or modded "
-  "xenotypes), ideology meme names, faction names, hediff defs, "
-  "weapon defs, hair-style defs ('Senorita', 'Bowlcut', 'Mohawk'), "
-  "beard-style defs ('Curly', 'Squared'), or gradient mask names "
-  "('MaskAHigh') MEAN - write the visual cues from the block's "
-  "description instead of echoing the term verbatim. Examples: "
-  "Sanguophage -> 'pale-skinned with slight fangs and a predatory "
-  "stillness'. Charge lance -> 'sleek plasteel energy rifle'. "
-  "Senorita -> 'long flowing hair past the shoulders, swept to one "
-  "side, voluminous waves'. Bowlcut -> 'short bowl-shaped haircut "
-  "cropped at the jawline'. Mohawk -> 'sides shaved, central strip "
-  "of upright hair'. Curly (beard) -> 'short curly beard following "
-  "the jawline'. Gradient hair -> describe the colour transition "
-  "directly ('charcoal roots fading to saturated red at the tips').\n"
-  "- Hair and beard are defining features the image model frequently "
-  "drops. Describe them with concrete structural language - length, "
-  "direction, texture, parting, colour transition - and place that "
-  "description early in the paragraph. A colour gradient should read "
-  "as a clean transition, not a list of colours.\n"
-  "- Choose words carefully so each item's TECHNOLOGICAL LEVEL "
-  "matches what the source data actually says, regardless of the "
-  "chosen visual style. RimWorld colonies span tribal / medieval / "
-  "industrial / spacer / ultra / archotech tech levels - read each "
-  "item's name + materials + description and match its era. A "
-  "tribal pawn in a buckskin parka with a recurve bow is tribal; a "
-  "musketeer in mail with a matchlock is industrial; a colonist in "
-  "plasteel recon armor with a beam repeater is spacer; an "
-  "archotech eye is post-spacer. Do NOT collapse everything to a "
-  "single era - do not turn spacer armor into a medieval "
-  "'breastplate', do not turn a tribal bow into a 'rifle', do not "
-  "turn an archotech eye into a 'monocle'. The visual MEDIUM "
-  "(Renaissance painting / anime / comic / etc.) is the filter; "
-  "each item's tech level survives the filter unchanged.\n"
-  "- Make the face clearly visible and the emotional focus.\n"
-  "- Translate the block's personality, traits, mood, role, "
-  "relationships, hediffs, and backstory into VISIBLE behavior - "
-  "expression, body language, clothing wear, scars, fatigue, warmth, "
-  "tension, guardedness.\n"
-  "- Anchor the scene on ONE specific verb the pawn is doing (drawn "
-  "from the block's Pose/activity, Inspiration, combat-readiness "
-  "signals, or another grounded RimWorld action - soldering a "
-  "circuit, hauling a crate, levelling the charge lance, stitching "
-  "a wound). Avoid generic standing/posing.\n"
-  "- Use 2-4 important clothing/gear/prop details from the block - "
-  "the strongest visible ones. Do not overload with inventory.\n"
-  "- Include the wielded weapon and hair description; image models "
-  "drop late details, so anchor these early in the paragraph.\n"
-  "- A simple setting that supports the subject without stealing "
-  "focus.\n"
-  "- Describe lighting and camera treatment: soft side light, "
-  "window light, practical lamp light, shallow depth of field, "
-  "realistic lens feel, natural skin texture, restrained cinematic "
-  "color grading.\n"
-  "- When a helmet or hat is carried/cradled/tucked rather than "
-  "worn, describe its interior as visibly empty (hollow, lined "
-  "padding, no face, no head, no eyes inside) - image models "
-  "otherwise fill the negative space with a severed head.\n\n"
-  "Style:\n"
-  "Realistic cinematic portrait language. Natural proportions, "
-  "practical materials, imperfect surfaces, lived-in clothing, "
-  "visible texture, subtle asymmetry, believable skin, weathering, "
-  "dust, sweat, grime, restrained color grading.\n\n"
-  "RimWorld context:\n"
-  "Use gritty colony survival imagery - patched spacer-fabric "
-  "clothing, improvised armor, steel walls, workshops, med bays, "
-  "hydroponics, transport pods, rough repairs, utility lighting, "
-  "hostile weather outside, worn tools, practical weapons, tired "
-  "eyes, grounded expressions. Do not copy RimWorld's top-down "
-  "game UI style.\n\n"
-  "Avoid:\n"
-  "Blank expression, glamor retouching, exaggerated beauty, static "
-  "passport-photo pose, centered character-sheet framing, superhero "
-  "poster composition, glossy fantasy armor, anime, cartoon, chibi, "
-  "plastic-looking 3D render, clean studio lighting, excessive "
-  "background detail, UI, HUD, captions, labels, watermarks, "
-  "unreadable fake text.\n\n"
-  "When source notes include relationships, show them subtly "
-  "through expression, posture, keepsakes, gaze direction, "
-  "protective stance, distance, or tension. Do not invent major "
-  "relationship events.\n\n"
-  "When source notes are sparse, invent only modest visual details "
-  "needed for coherence. Do not invent major backstory, names, "
-  "titles, symbols, factions, or plot events.\n\n"
-  "End with \"realistic gritty RimWorld sci-fi colony portrait, "
-  "grounded expression, no UI.\""
 )
 
 
+def _output_format(min_words: int, max_words: int) -> str:
+  return (
+    "Output format:\n"
+    "- One paragraph only.\n"
+    f"- {min_words}-{max_words} words preferred.\n"
+    "- No JSON.\n"
+    "- No bullet points.\n"
+    "- No labels like 'Subject:' or 'Style:'.\n"
+    "- Do not generate multiple options.\n"
+    "- The final output must be directly usable as an "
+    "image-generation prompt.\n\n"
+  )
+
+
+_EMPTY_HELMET = (
+  "- When a helmet or hat is carried/cradled/tucked rather than "
+  "worn, describe its interior as visibly empty (hollow, lined "
+  "padding, no face/head inside) - image models otherwise fill the "
+  "negative space with a severed head.\n"
+)
+
+
+_SPARSE_NOTES = (
+  "When source notes are sparse, invent only modest visual details "
+  "needed for coherence. Do not invent major backstory, names, "
+  "titles, symbols, factions, or plot events.\n\n"
+)
+
+
+_CHILD_SAFETY = (
+  "Children look age-appropriate and are never sexualized."
+)
+
+
+def _ender(noun: str) -> str:
+  return f'End with "realistic gritty RimWorld sci-fi colony {noun}, no UI."'
+
+
+SINGLE_PROMPT_INSTRUCTION = """\
+You write image-generation prompts for modern multimodal image \
+models such as gpt-image-2 and gemini-3-pro-image-preview.
+
+Task:
+Given a [PORTRAIT SUBJECT] block, produce one polished \
+image-generation prompt for a grounded cinematic portrait of one \
+RimWorld pawn.
+
+Output format:
+- One paragraph only.
+- 160-300 words preferred.
+- No JSON.
+- No bullet points.
+- No labels like "Subject:" or "Style:".
+- Do not generate multiple options.
+- Do not include the pawn's name.
+- End with: "realistic gritty RimWorld sci-fi colony portrait, \
+grounded expression, no UI."
+
+Core goal:
+Create a believable portrait of a real colonist, not a poster, \
+character sheet, fashion shoot, game screenshot, trading card, or \
+generic concept-art lineup.
+
+Opening:
+Start with "Portrait of a [age]-year-old [role/identity]..." using \
+visual identity rather than game terms. Do not write raw def names \
+such as Sanguophage, Yttakin, Hussar, Cataphract, Zeushammer, \
+Victoria, MaskAHigh, Psycast, Hemogen, or ideology meme names \
+unless they are also translated into clear visual language.
+
+Translation rule:
+Translate all RimWorld-specific terms into visual descriptors. The \
+image model does not know game defs. Use the source descriptions to \
+infer visible cues.
+
+Examples:
+- Sanguophage -> pale archotech-altered immortal human, slight \
+fangs, unnaturally flawless skin, predatory stillness, blood-drinker \
+undertone.
+- Prestige cataphract armor -> ornate futuristic powered armor with \
+bulky sealed plasteel plates, gold trim, servo-assisted joints, \
+psychic-thread detailing, high-status military finish.
+- Cataphract helmet -> heavy futuristic enclosed combat helmet with \
+opaque visor optics, sealed plasteel shell, padded empty interior \
+if carried.
+- Persona zeushammer -> massive ultra-tech warhammer with seamless \
+composite casing, charged impact head, faint blue-white electrical \
+arcs, impossible precision.
+- Psychic shock lance -> slim archotech sidearm/tool with seamless \
+casing, faint iridescent channels, alien medical-instrument \
+precision.
+- Gunlink -> compact targeting computer with sensor modules and \
+retinal-projector hardware.
+- Cape -> visible over-armor drape, cloth/leather weight, \
+colony-worn.
+- Bandolier -> industrial shoulder belt with cartridge loops, \
+pouches, worn leather, metal buckles.
+- Baby carrier -> empty practical cloth carrier with simple straps \
+and buckles.
+- Hair-style defs -> translate into visible hair structure.
+- Gradient hair -> describe the clean colour transition directly.
+
+Tech-level rule:
+Preserve the tech level of every visible item, regardless of visual \
+art style. Do not turn futuristic equipment into medieval fantasy \
+armor or generic knight armor.
+
+Use this vocabulary:
+- Neolithic-tech: knapped stone, bone, sinew, hide stitching, \
+charred wood, rough handwork.
+- Medieval-tech: rivets, hammered metal, leather straps, wool, \
+hand stitching, polished or engraved metal for high quality.
+- Industrial-tech: milled steel, machine stitching, brass fittings, \
+gunpowder hardware, canvas, buckles, cartridges, factory-made wear.
+- Spacer-tech: powered exosuit, servomotors, sealed composite \
+plates, plasteel weave, visor optics, ablative coating, integrated \
+sensors, armored joints, sci-fi life-support sealing.
+- Ultra-tech: seamless nano-composite, impossible precision, \
+contained energy fields, luminous channels, smart materials, \
+compact high-energy mechanisms.
+- Archotech-tech: alien-minimal seamless surfaces, faint \
+iridescence, nonhuman geometry, subtle reality-bending glow, \
+psychic or neural-machine unease.
+
+Layering rule:
+Describe only what is visible. Shell-layer armor hides middle-layer \
+and onskin clothing on the same body region. An overhead helmet \
+hides hair and most facial details if worn. For portraits, prefer \
+the helmet removed, tucked under one arm, resting against the hip, \
+or held at the side unless the source explicitly requires it worn. \
+If a helmet is carried, clearly describe it as empty, with hollow \
+padded interior and no face or head inside. Belt-layer gear, \
+bandoliers, capes, baby carriers, sidearms, and carried weapons \
+remain visible over armor.
+
+Portrait priority:
+The face must be clearly visible and be the emotional focus. If the \
+pawn has defining hair, facial hair, tattoos, scars, skin tone, \
+fangs, unusual eyes, or other identity cues, place those details \
+early in the paragraph. Hair should be described structurally: \
+length, parting, volume, direction, texture, and colour transition. \
+Do not just repeat the hair def name.
+
+Visible-body rule:
+Mention only visible body traits. Do not describe hidden implants, \
+missing toes, internal organs, stomach implants, brain implants, \
+lactation, genes, hediffs, or abilities unless they create visible \
+cues in the portrait. Translate invisible traits into expression, \
+posture, stillness, confidence, fatigue, fear of fire, predatory \
+restraint, or other visible behavior.
+
+Expression and personality:
+Translate personality, mood, role, relationships, traits, and \
+backstory into visible behavior. Do not explain lore. Show it \
+through expression, gaze, posture, warmth, tension, protectiveness, \
+confidence, hunger, fatigue, guardedness, or social ease.
+
+Action:
+Anchor the portrait on one grounded action, not a static pose. Use \
+the pawn's current activity when possible, translated visually. For \
+HaulToCell, use something like carrying a sealed supply crate, \
+dragging a storage bin, shifting weight under a heavy load, or \
+pausing mid-haul in a colony yard. The action should support the \
+portrait without becoming a full action scene.
+
+Gear selection:
+Use the 2-4 strongest visible gear elements, plus the wielded \
+weapon if important. Do not list inventory. Prioritize visually \
+distinctive and identity-defining items: futuristic powered armor, \
+carried helmet, signature weapon, visible sidearm/tool, cape, \
+bandolier, baby carrier, tattoos, hair, face.
+
+Setting:
+Use a simple RimWorld colony setting that supports the subject \
+without stealing focus: steel colony yard, workshop, med bay, \
+hydroponics room, transport-pad area, storage zone, rough perimeter \
+wall, muddy forest clearing, improvised defenses. Use biome, \
+weather, and time of day to motivate lighting. Morning clear \
+weather means warm directional sunlight, crisp shadows, cool \
+ambient fill, and dust or dew in the air.
+
+Ideology and culture:
+Do not name ideology memes or factions. Translate them into subtle \
+palette, materials, posture, and background mood. Use ideological \
+colours as accents only when visually useful. Morbid, spikecore, \
+transhumanist, collectivist, supremacist, tunneler, or religious \
+cues should appear as restrained visual influence, not explicit \
+exposition or symbols unless the source names a specific visible \
+object.
+
+Style:
+Use realistic cinematic portrait language: natural proportions, \
+believable skin texture, subtle asymmetry, practical materials, \
+worn surfaces, dust, scratches, sweat, grime, lived-in clothing, \
+restrained color grading, shallow depth of field, realistic lens \
+feel, soft side light or motivated practical light.
+
+Avoid:
+Blank expression, glamour retouching, exaggerated beauty, static \
+passport-photo pose, centered character-sheet framing, superhero \
+poster composition, fantasy knight armor, glossy fantasy armor, \
+anime, cartoon, chibi, plastic-looking 3D render, clean studio \
+lighting, excessive background detail, UI, HUD, captions, labels, \
+watermarks, fake text, and unreadable symbols.
+
+If source notes conflict:
+Prefer visual coherence. For example, if the prompt needs the face \
+and hair visible but the pawn wears a helmet, carry the helmet \
+instead of wearing it. If an item would be hidden under armor, \
+omit it. If too many traits or objects are present, choose the \
+most visually important ones.
+
+Validation (silent self-check before responding):
+Re-read your draft once against the checklist below. For each \
+failing item, rewrite the offending fragment and re-check. Output \
+ONLY the final paragraph - never the checklist, never an \
+explanation, never multiple drafts.
+1. No raw RimWorld def names appear (Sanguophage, Cataphract, \
+Marine, Recon, Zeushammer, Persona, Senorita, Bowlcut, Mohawk, \
+Curly, MaskAHigh, Hemogen, Psycast, HaulToCell, ideology meme \
+names, faction names) unless the same clause also gives visual \
+translation. Example pass: "an immortal blood-drinker"; example \
+fail: "a Sanguophage colonist".
+2. Every visible item's vocabulary matches its tech level. \
+Spacer-tech items read as powered exosuits / servomotors / sealed \
+plasteel / visor optics - never as cuirasses, breastplates, \
+knight armor, or fantasy plate. Ultra/archotech items read as \
+seamless composite / iridescent / energy-cored - never as forged \
+steel hammers. Medieval items don't read as sci-fi. Neolithic \
+items don't read as machined. Industrial items don't read as \
+laser/plasma.
+3. No clothing item that would be hidden under outer armor appears \
+in the paragraph. Shell-layer armor over the torso hides any \
+shirt, corset, blouse, robe, or pants on that body region - those \
+items must not be described. Capes, belts, bandoliers, baby \
+carriers, sidearms, and gunlinks DO remain visible over armor and \
+should be kept.
+4. If a helmet is mentioned, it is either (a) explicitly carried, \
+tucked, or held at the side with its interior described as empty - \
+hollow padded shell, no face, no head, no eyes inside - or (b) \
+worn in a way the source demands. The face is never accidentally \
+obscured.
+5. The pawn's name does not appear anywhere in the paragraph.
+6. The paragraph is a single block: no JSON, no bullets, no \
+"Subject:" / "Style:" labels, no multiple alternative options, \
+no headings.
+7. Hair is described structurally - length, parting, volume, \
+direction, texture, colour transition - within the first third of \
+the paragraph. Not just the hair def name.
+8. The portrait is anchored on one grounded RimWorld action \
+translated visually, not a static or generic pose.
+9. The closing phrase is exactly: "realistic gritty RimWorld \
+sci-fi colony portrait, grounded expression, no UI." with no \
+extra words after it."""
+
+
 FAMILY_PROMPT_INSTRUCTION = (
-  "You write image-generation prompts for modern multimodal image "
-  "models such as gpt-image-2 and gemini-3-pro-image-preview.\n\n"
-  "Task:\n"
+  _PREAMBLE
+  + "Task:\n"
   "Given the [FAMILY PORTRAIT SUBJECT] block below, produce one "
   "polished image-generation prompt for a grounded cinematic family "
   "portrait of the focus pawn and the listed members.\n\n"
-  "Output format:\n"
-  "- One paragraph only.\n"
-  "- 130-260 words preferred.\n"
-  "- No JSON.\n"
-  "- No bullet points.\n"
-  "- No labels like 'Subject:' or 'Style:'.\n"
-  "- Do not generate multiple options.\n"
-  "- The final output must be directly usable as an image-generation "
-  "prompt.\n\n"
-  "Core goal:\n"
+  + _output_format(130, 260)
+  + "Core goal:\n"
   "Create a believable group portrait of these people, not a poster, "
   "character sheet, fashion shoot, game screenshot, or generic "
   "concept-art lineup.\n\n"
@@ -205,16 +346,9 @@ FAMILY_PROMPT_INSTRUCTION = (
   "- Hair, beard, and wielded weapon per person are defining "
   "features the image model frequently drops. Anchor them early in "
   "each person's clause with concrete structural language.\n"
-  "- Choose words carefully so each item's TECHNOLOGICAL LEVEL "
-  "matches what the source data actually says. RimWorld colonies "
-  "span tribal / medieval / industrial / spacer / ultra / archotech "
-  "tech levels - read each item's name + materials + description "
-  "per person and match its era. A tribal pawn in a buckskin parka "
-  "with a recurve bow is tribal; a colonist in plasteel recon armor "
-  "with a beam repeater is spacer. Do not collapse the family to "
-  "a single era when its members are mixed. The visual MEDIUM may "
-  "be Renaissance / anime / comic / etc., but each item's tech "
-  "level survives the style filter unchanged.\n"
+  "- Trust the section-scoped Guidance: paragraphs inside each "
+  "[PERSON] block; they govern apparel layering / tech, face, "
+  "body, and pose. Do not contradict them.\n"
   "- Block the composition spatially: who stands where, who is "
   "closer to camera, gaze directions, who looks at whom.\n"
   "- For each person: one verb (from their Pose/activity or "
@@ -224,11 +358,10 @@ FAMILY_PROMPT_INSTRUCTION = (
   "- Include the wielded weapon and hair description per person; "
   "image models drop late details, so anchor these early.\n"
   "- Show relationships through gesture: protective stance, "
-  "shielding, shared glance, touch, distance, tension. Children "
-  "look age-appropriate and are never sexualized.\n"
+  "shielding, shared glance, touch, distance, tension. "
+  + _CHILD_SAFETY + "\n"
   "- Helmets are usually removed or carried so faces are visible. "
-  "When carried/cradled, describe the interior as visibly empty "
-  "(hollow, lined padding, no face/head inside).\n"
+  + _EMPTY_HELMET +
   "- A simple setting that grounds the group without stealing "
   "focus.\n"
   "- One shared camera + lens + lighting line for the whole "
@@ -251,31 +384,19 @@ FAMILY_PROMPT_INSTRUCTION = (
   "cartoon, chibi, plastic-looking 3D render, clean studio "
   "lighting, UI, HUD, captions, labels, watermarks, unreadable "
   "fake text.\n\n"
-  "When source notes are sparse, invent only modest visual details "
-  "needed for coherence. Do not invent major backstory, names, "
-  "titles, symbols, factions, or plot events.\n\n"
-  "End with \"realistic gritty RimWorld sci-fi colony family "
-  "portrait, grounded expressions, no UI.\""
+  + _SPARSE_NOTES
+  + _ender("family portrait, grounded expressions")
 )
 
 
 ACTION_PROMPT_INSTRUCTION = (
-  "You write image-generation prompts for modern multimodal image "
-  "models such as gpt-image-2 and gemini-3-pro-image-preview.\n\n"
-  "Task:\n"
+  _PREAMBLE
+  + "Task:\n"
   "Given the [PORTRAIT SUBJECT] block below, produce one polished "
   "image-generation prompt for a cinematic action image that looks "
   "like a still frame from a live-action movie.\n\n"
-  "Output format:\n"
-  "- One paragraph only.\n"
-  "- 120-260 words preferred.\n"
-  "- No JSON.\n"
-  "- No bullet points.\n"
-  "- No labels like 'Camera:' or 'Style:'.\n"
-  "- Do not generate multiple options.\n"
-  "- The final output must be directly usable as an image-generation "
-  "prompt.\n\n"
-  "Core goal:\n"
+  + _output_format(120, 260)
+  + "Core goal:\n"
   "Create a single frozen moment from a believable movie scene, not "
   "a poster, character sheet, portrait, game screenshot, or "
   "concept-art lineup.\n\n"
@@ -301,15 +422,9 @@ ACTION_PROMPT_INSTRUCTION = (
   "image model frequently drops. Anchor them with concrete "
   "structural language - length, direction, texture, grip, "
   "colour transition - in the first half of the paragraph.\n"
-  "- Choose words carefully so each item's TECHNOLOGICAL LEVEL "
-  "matches what the source data actually says. RimWorld colonies "
-  "span tribal / medieval / industrial / spacer / ultra / archotech "
-  "tech levels - read the item's name + materials + description and "
-  "match its era. A tribal pawn fighting with a recurve bow stays "
-  "tribal; a colonist firing a beam repeater stays spacer. The "
-  "visual MEDIUM (cinematic still / anime / comic / etc.) is the "
-  "filter; the tech level of each item survives the filter "
-  "unchanged.\n"
+  "- Trust the section-scoped Guidance: paragraphs inside the "
+  "[PORTRAIT SUBJECT] block; they govern apparel layering / tech, "
+  "face, body, pose, and environment. Do not contradict them.\n"
   "- Start with the exact instant of action - what is happening "
   "right now. Draw the verb from the block's Pose/activity, "
   "Inspiration, combat-readiness signals (shoot frenzy / berserker "
@@ -337,11 +452,8 @@ ACTION_PROMPT_INSTRUCTION = (
   "- Include the wielded weapon and hair description; image models "
   "drop late details, so anchor these early.\n"
   "- Keep the environment active and relevant to the action.\n"
-  "- When a helmet or hat is carried/cradled/tucked rather than "
-  "worn, describe its interior as visibly empty (hollow, lined "
-  "padding, no face/head inside) - image models otherwise fill the "
-  "negative space with a severed head.\n\n"
-  "Style:\n"
+  + _EMPTY_HELMET
+  + "\nStyle:\n"
   "Realistic live-action cinematic sci-fi or grounded film-still "
   "language. Natural proportions, practical materials, imperfect "
   "surfaces, weathering, dust, sweat, grime, believable clothing, "
@@ -362,12 +474,9 @@ ACTION_PROMPT_INSTRUCTION = (
   "When source notes include multiple characters, show "
   "relationship-aware blocking - distance, touch, eye lines, "
   "shielding gestures, hesitation, conflict, coordination. "
-  "Children look age-appropriate and are never sexualized.\n\n"
-  "When source notes are sparse, invent only modest visual details "
-  "needed for coherence. Do not invent major backstory, names, "
-  "titles, symbols, factions, or plot events.\n\n"
-  "End with \"realistic gritty RimWorld sci-fi colony action still, "
-  "no UI.\""
+  + _CHILD_SAFETY + "\n\n"
+  + _SPARSE_NOTES
+  + _ender("action still")
 )
 
 
@@ -493,13 +602,45 @@ def _gradient_value(gh: GradientHair | None) -> str | None:
   if gh is None or not gh.enabled:
     return None
   parts = ["enabled"]
-  c_b = describe_rgba(gh.color_b)
+  c_b = rgba_to_name(gh.color_b) if gh.color_b else None
   if c_b:
     parts.append(f"gradient color {c_b}")
-  region = describe_gradient_mask(gh.mask)
-  if region:
-    parts.append(f"mask {region}")
   return "; ".join(parts)
+
+
+def _layer_tag(
+  def_name: str,
+  apparel_layers: dict[str, str] | None,
+) -> str:
+  """Return a ``[<layer>-layer]`` tag for the def, or empty string.
+
+  Sourced from the def's <apparel><layers> tag (mod-aware,
+  ParentName-inherited). The render layer also uses this layer to
+  sort items outer-to-inner so the worn-armor line reads from the
+  outermost visible silhouette inward."""
+  if apparel_layers is None:
+    return ""
+  layer = apparel_layers.get(def_name)
+  if not layer:
+    return ""
+  return f" [{layer.lower()}-layer]"
+
+
+def _tech_tag(
+  def_name: str,
+  tech_levels: dict[str, str] | None,
+) -> str:
+  """Return a ``[<tech>-tech]`` tag for the def, or empty string.
+
+  Sourced from the def's <techLevel> tag (mod-aware, ParentName-
+  inherited). The LLM uses this to pick period-appropriate vocabulary
+  without having to guess from the item name."""
+  if tech_levels is None:
+    return ""
+  tech = tech_levels.get(def_name)
+  if not tech:
+    return ""
+  return f" [{tech}-tech]"
 
 
 def _apparel_phrase(
@@ -507,6 +648,8 @@ def _apparel_phrase(
   labels: dict[str, str] | None = None,
   carrying_infant: bool = False,
   cost_materials: dict[str, str] | None = None,
+  tech_levels: dict[str, str] | None = None,
+  apparel_layers: dict[str, str] | None = None,
 ) -> str:
   """Render one apparel item's inline phrase.
 
@@ -518,21 +661,29 @@ def _apparel_phrase(
   qual = qualifier_for_apparel(it, cost_materials)
   if is_baby_carrier(it.def_name) and not carrying_infant:
     qual = f"{qual}, empty" if qual else "empty"
-  return f"{base} ({qual})" if qual else base
+  body = f"{base} ({qual})" if qual else base
+  return (body
+          + _layer_tag(it.def_name, apparel_layers)
+          + _tech_tag(it.def_name, tech_levels))
 
 
 def _weapon_phrase(
-  w: Weapon, labels: dict[str, str] | None = None
+  w: Weapon,
+  labels: dict[str, str] | None = None,
+  tech_levels: dict[str, str] | None = None,
 ) -> str:
   base = describe_weapon(w, labels)
   qual = qualifier_for_weapon(w)
-  return f"{base} ({qual})" if qual else base
+  body = f"{base} ({qual})" if qual else base
+  return body + _tech_tag(w.def_name, tech_levels)
 
 
 def _gear_lines(
   p: PawnRecord,
   labels: dict[str, str] | None = None,
   cost_materials: dict[str, str] | None = None,
+  tech_levels: dict[str, str] | None = None,
+  apparel_layers: dict[str, str] | None = None,
 ) -> list[tuple[str, str]]:
   """Split worn gear into three prominence buckets.
 
@@ -542,16 +693,34 @@ def _gear_lines(
   _carrying_summary and is not included here, so the equipped
   silhouette stays distinct from pack supplies.
   """
-  armor: list[str] = []
-  utility: list[str] = []
+  armor_items: list[ApparelItem] = []
+  utility_items: list[ApparelItem] = []
   carrying = p.carried_infant is not None
   for it in p.apparel:
-    target = utility if is_utility_apparel(it.def_name) else armor
-    target.append(_apparel_phrase(
-      it, labels, carrying_infant=carrying,
-      cost_materials=cost_materials,
-    ))
-  weapons = [_weapon_phrase(w, labels) for w in p.equipment]
+    target = utility_items if is_utility_apparel(it.def_name) else armor_items
+    target.append(it)
+  # Sort outer -> inner so the rendered line reads from the visible
+  # silhouette inward. Belt items (utility) and torso layers each
+  # sort within their own bucket. Stable sort preserves extraction
+  # order on ties.
+  def _outer_key(it: ApparelItem) -> int:
+    layer = (apparel_layers or {}).get(it.def_name)
+    return layer_rank(layer)
+  armor_items.sort(key=_outer_key)
+  utility_items.sort(key=_outer_key)
+  armor = [_apparel_phrase(
+    it, labels, carrying_infant=carrying,
+    cost_materials=cost_materials,
+    tech_levels=tech_levels,
+    apparel_layers=apparel_layers,
+  ) for it in armor_items]
+  utility = [_apparel_phrase(
+    it, labels, carrying_infant=carrying,
+    cost_materials=cost_materials,
+    tech_levels=tech_levels,
+    apparel_layers=apparel_layers,
+  ) for it in utility_items]
+  weapons = [_weapon_phrase(w, labels, tech_levels) for w in p.equipment]
   out: list[tuple[str, str]] = []
   if armor:
     out.append(("Worn armor/clothing", ", ".join(armor)))
@@ -560,15 +729,6 @@ def _gear_lines(
   if weapons:
     out.append(("Wielded weapon", ", ".join(weapons)))
   return out
-
-
-def _carrying_summary(
-  p: PawnRecord, labels: dict[str, str] | None = None
-) -> str | None:
-  items = describe_inventory(p.inventory, labels)
-  if not items:
-    return None
-  return ", ".join(items)
 
 
 def _carrying_infant(p: PawnRecord) -> str | None:
@@ -653,43 +813,6 @@ def _creepjoiner_value(
   return " ".join(bits)
 
 
-def _abilities_value(
-  abilities: tuple[str, ...],
-  labels: dict[str, str] | None = None,
-) -> str | None:
-  if not abilities:
-    return None
-  parts = [
-    (labels.get(d) if labels else None) or humanise(d)
-    for d in abilities
-  ]
-  return ", ".join(parts)
-
-
-def _psyfocus_value(psyfocus: float | None) -> str | None:
-  """Render psyfocus as a band label, suppressed below 25%.
-
-  Thresholds chosen to align with RimWorld's UI psyfocus quartile
-  display: depleted/low/moderate/high/full. The label includes the
-  numeric percentage so the LLM can ground a 'how charged are they
-  looking' decision against the raw signal too.
-  """
-  if psyfocus is None:
-    return None
-  pct = int(round(psyfocus * 100))
-  if psyfocus >= 0.95:
-    band = "full"
-  elif psyfocus >= 0.75:
-    band = "high"
-  elif psyfocus >= 0.50:
-    band = "moderate"
-  elif psyfocus >= 0.25:
-    band = "low"
-  else:
-    band = "depleted"
-  return f"{band} ({pct}%)"
-
-
 def _bonded_animals_value(
   animals: tuple[BondedAnimal, ...],
   labels: dict[str, str] | None = None,
@@ -717,33 +840,6 @@ def _bonded_animals_value(
     if bits:
       head += " (" + ", ".join(bits) + ")"
     parts.append(head)
-  return ", ".join(parts)
-
-
-def _connections_value(
-  connections: tuple[str, ...],
-  labels: dict[str, str] | None = None,
-) -> str | None:
-  """Compact connections summary with per-def tallies.
-
-  Used for gauranlen tree links, dryad bonds, and any mod-defined
-  connected things. Order matches commanded-mechs: sort by count
-  descending, then label ascending; singleton entries omit the
-  ``× 1`` suffix.
-  """
-  if not connections:
-    return None
-  counts: dict[str, int] = {}
-  for d in connections:
-    counts[d] = counts.get(d, 0) + 1
-  by_count = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-  parts: list[str] = []
-  for def_name, n in by_count:
-    label = (
-      (labels.get(def_name) if labels else None)
-      or humanise(def_name)
-    )
-    parts.append(f"{label} × {n}" if n > 1 else label)
   return ", ".join(parts)
 
 
@@ -812,12 +908,11 @@ def _royal_title_line(
   parts: list[str] = []
   for t in titles:
     label = labels.get(t.def_name) if labels else None
-    if label and label != t.def_name:
-      head = f"{t.def_name} - {label}"
-    else:
-      head = t.def_name
+    # Prefer the resolved Empire / mod label (e.g. RimWorld's
+    # `Count` def with label `archon`); fall back to the def name.
+    head = label if label else t.def_name
     if t.faction_name:
-      parts.append(f"{head}, of {t.faction_name}")
+      parts.append(f"{head} of {t.faction_name}")
     else:
       parts.append(head)
   return "; ".join(parts)
@@ -870,7 +965,7 @@ def _physical_state(p: PawnRecord) -> str | None:
 
 def _personality(p: PawnRecord) -> str | None:
   if p.personality:
-    return p.personality
+    return _strip_rimtalk_style(p.personality)
   bits: list[str] = []
   if p.backstory_child:
     bits.append(f"childhood: {p.backstory_child}")
@@ -879,6 +974,17 @@ def _personality(p: PawnRecord) -> str | None:
   if not bits:
     return None
   return "; ".join(bits)
+
+
+def _strip_rimtalk_style(text: str) -> str:
+  """Drop the trailing RimTalk ``Style: talk X, warmth Y, ...``
+  sentence appended to every personality blob. These numeric voice
+  stats don't shape the visual portrait."""
+  marker = " Style: "
+  idx = text.find(marker)
+  if idx == -1:
+    return text
+  return text[:idx].rstrip()
 
 
 def _compact_head_and_face(
@@ -897,7 +1003,7 @@ def _compact_head_and_face(
     bits.append(f"hair {hair_style}")
   elif hair_disp:
     bits.append(f"hair {hair_disp}")
-  hair_color = describe_rgba(p.hair_color)
+  hair_color = rgba_to_name(p.hair_color) if p.hair_color else None
   if hair_color:
     bits.append(f"hair color {hair_color}")
   grad = _gradient_value(p.gradient_hair)
@@ -912,10 +1018,10 @@ def _compact_head_and_face(
   body_tat = _tattoo_phrase(p.body_tattoo, labels, categories)
   if body_tat:
     bits.append(f"body tattoo {body_tat}")
-  skin = describe_rgba(p.skin_color)
+  skin = rgba_to_name(p.skin_color) if p.skin_color else None
   if skin:
     bits.append(f"skin {skin}")
-  eye = describe_rgba(p.eye_color)
+  eye = rgba_to_name(p.eye_color) if p.eye_color else None
   if eye:
     bits.append(f"eyes {eye}")
   if not bits:
@@ -969,16 +1075,18 @@ def _head_and_face_block(
     beard_disp = None
   lines: list[str | None] = [
     _sub("Hair style", hair_disp),
-    _sub("Hair texture path", p.hair_texture_path),
-    _sub("Hair/base beard color", describe_rgba(p.hair_color)),
+    _sub("Hair/base beard color",
+         rgba_to_name(p.hair_color) if p.hair_color else None),
     _sub("Hair gradient", _gradient_value(p.gradient_hair)),
     _sub("Beard", beard_disp),
     _sub("Beard color",
-         describe_rgba(p.beard_color) if p.beard_color else None),
+         rgba_to_name(p.beard_color) if p.beard_color else None),
     _sub("Face tattoo", _tattoo_phrase(p.face_tattoo, labels, categories)),
     _sub("Body tattoo", _tattoo_phrase(p.body_tattoo, labels, categories)),
-    _sub("Skin color", describe_rgba(p.skin_color)),
-    _sub("Eye color", describe_rgba(p.eye_color)),
+    _sub("Skin color",
+         rgba_to_name(p.skin_color) if p.skin_color else None),
+    _sub("Eye color",
+         rgba_to_name(p.eye_color) if p.eye_color else None),
   ]
   return [s for s in lines if s]
 
@@ -988,27 +1096,55 @@ def _ideo_block_lines(ideo: IdeoRecord | None) -> list[str]:
     return []
   lines: list[str | None] = [
     _line("Ideology/culture", ideo.name),
-    _line("Ideology primary color", describe_rgba(ideo.color)),
-    _line("Ideology apparel color", describe_rgba(ideo.apparel_color)),
+    _line("Ideology primary color",
+          rgba_to_name(ideo.color) if ideo.color else None),
+    _line("Ideology apparel color",
+          rgba_to_name(ideo.apparel_color) if ideo.apparel_color else None),
     _line("Ideology description/style",
-          ideo.description or ideo.style_summary),
+          _first_sentence(ideo.description or ideo.style_summary)),
     _line("Ideology style aesthetic", _style_categories_value(ideo)),
-    _line("Ideology memes", ", ".join(ideo.memes) or None),
+    _line("Ideology memes", _meme_list(ideo.memes)),
   ]
   return [s for s in lines if s]
 
 
 def _style_categories_value(ideo: IdeoRecord) -> str | None:
-  """Render the ideology's thingStyleCategories as 'X (priority N), ...'.
+  """Render thingStyleCategories as a comma-joined name list.
 
-  Priority is included verbatim from the save - the LLM can decide
-  weighting. No curated visual phrasing; per the project's data-first
-  principle the def names are emitted as-is.
-  """
+  Priority numbers are dropped - they don't help the image model
+  decide weighting, and the ordering of the list (already
+  priority-descending from the save) already encodes precedence."""
   if not ideo.style_categories:
     return None
-  parts = [f"{cat} (priority {pri})" for cat, pri in ideo.style_categories]
-  return ", ".join(parts)
+  return ", ".join(cat for cat, _pri in ideo.style_categories)
+
+
+def _meme_list(memes: tuple[str, ...]) -> str | None:
+  """Comma-join meme defs, stripping the internal ``Structure_``
+  category prefix from the first (structure) meme so the LLM sees
+  the readable identity (``TheistEmbodied``) rather than the
+  internal class marker."""
+  if not memes:
+    return None
+  cleaned = [m.removeprefix("Structure_") for m in memes]
+  return ", ".join(cleaned)
+
+
+def _first_sentence(text: str | None) -> str | None:
+  """Truncate prose to its first sentence (everything up to and
+  including the first ``. ``). Used to trim multi-paragraph lore
+  paragraphs (xenotype, ideology, apparel descriptions) down to the
+  one sentence that actually carries visual signal."""
+  if not text:
+    return None
+  s = text.strip()
+  if not s:
+    return None
+  # Find the earliest sentence terminator followed by whitespace.
+  for i, ch in enumerate(s):
+    if ch in ".!?" and (i + 1 == len(s) or s[i + 1].isspace()):
+      return s[: i + 1]
+  return s
 
 
 def _setting_value(p: PawnRecord) -> str | None:
@@ -1053,13 +1189,10 @@ def _time_of_day_value(m: MapContext) -> str | None:
 def _map_block_lines(m: MapContext | None) -> list[str]:
   if m is None:
     return []
-  threat = ", ".join(m.active_threats) if m.active_threats else None
   inner: list[str | None] = [
     _sub("Time of day", _time_of_day_value(m)),
     _sub("Weather", m.weather),
     _sub("Biome", m.biome),
-    _sub("Wealth context", wealth_tier(m.wealth)),
-    _sub("Situation/threat context", threat),
   ]
   inner_filtered = [s for s in inner if s]
   if not inner_filtered:
@@ -1072,8 +1205,15 @@ def _apparel_section(
   def_descriptions: dict[str, str] | None = None,
   def_labels: dict[str, str] | None = None,
   def_cost_materials: dict[str, str] | None = None,
+  def_tech_levels: dict[str, str] | None = None,
+  def_apparel_layers: dict[str, str] | None = None,
 ) -> list[str]:
-  items_list = list(items)
+  # Sort outer -> inner to match the inline "Worn armor/clothing"
+  # ordering so the LLM sees the same silhouette story twice.
+  def _outer_key(it: ApparelItem) -> int:
+    layer = (def_apparel_layers or {}).get(it.def_name)
+    return layer_rank(layer)
+  items_list = sorted(items, key=_outer_key)
   rows = describe_apparel(items_list, def_labels)
   if not rows:
     return []
@@ -1084,6 +1224,8 @@ def _apparel_section(
     head = f"- {label}"
     if qual:
       head += f" [{qual}]"
+    head += _layer_tag(item.def_name, def_apparel_layers)
+    head += _tech_tag(item.def_name, def_tech_levels)
     out.append(f"{head}: {body}")
   return out
 
@@ -1097,11 +1239,19 @@ def render_portrait(
   def_labels: dict[str, str] | None = None,
   def_categories: dict[str, str] | None = None,
   def_cost_materials: dict[str, str] | None = None,
+  def_tech_levels: dict[str, str] | None = None,
+  def_apparel_layers: dict[str, str] | None = None,
 ) -> str:
-  """Build the [PORTRAIT SUBJECT] block for a single pawn."""
+  """Build the [PORTRAIT SUBJECT] block for a single pawn.
+
+  Topic sections (Identity / Face / Body / Apparel / Pose & state /
+  Environment) each carry their own ``Guidance:`` paragraph so the
+  downstream LLM reads instructions adjacent to the data they
+  govern, instead of cross-referencing one big trailing block."""
   name = p.label or p.nickname or p.name_full
   lines: list[str] = ["[PORTRAIT SUBJECT]"]
-  for ln in (
+  # Identity.
+  identity = [ln for ln in (
     _line("Name", name),
     _line("Role", p.role.capitalize() if p.role else None),
     _line("Royal title",
@@ -1110,14 +1260,18 @@ def render_portrait(
           _race_xenotype(p, def_descriptions, def_labels)),
     _line("Gender", p.gender),
     _line("Age", _age_str(p.bio_age, p.chrono_age)),
-  ):
-    if ln:
-      lines.append(ln)
+  ) if ln]
+  if identity:
+    lines.append("Identity:")
+    lines.extend(identity)
+    lines.append("")
+  # Face.
   head = _head_and_face_block(p, def_labels, def_categories)
   if head:
     lines.append("Head and face:")
     lines.extend(head)
-  # Body — physical canvas the apparel sits on.
+    lines.append("")
+  # Body.
   body = [s for s in (
     _sub("Visible genes/body traits",
          ", ".join(describe_genes(p.genes, def_labels)) or None),
@@ -1127,29 +1281,32 @@ def render_portrait(
   if body:
     lines.append("Body:")
     lines.extend(body)
-  # Apparel — what's worn / wielded / carried, top to bottom.
+    lines.append("")
+  # Apparel — worn line, visual descriptions, carried/inventory all in
+  # one section so the LLM doesn't have to cross-reference them.
   apparel = [s for s in (
     *(_sub(label, value)
-      for label, value in _gear_lines(p, def_labels, def_cost_materials)),
+      for label, value in _gear_lines(
+        p, def_labels, def_cost_materials, def_tech_levels,
+        def_apparel_layers)),
     _sub("Carrying infant in arms", _carrying_infant(p)),
-    _sub("Carrying (pack/inventory)", _carrying_summary(p, def_labels)),
   ) if s]
-  if apparel:
+  visual = _apparel_section(
+    p.apparel, def_descriptions, def_labels, def_cost_materials,
+    def_tech_levels, def_apparel_layers,
+  )
+  if apparel or visual:
     lines.append("Apparel:")
     lines.extend(apparel)
-  # Pose and scene — what they're doing and where.
-  pose = [s for s in (
+    lines.extend(visual)
+    lines.append("")
+  # Pose, action, and state — what they're doing, mood/behavior cues.
+  pose_lines = [s for s in (
     _sub("Pose/activity", p.current_job),
     _sub("Setting", _setting_value(p)),
     _sub("Immediate setting", p.location),
     _sub("Favorite color/accent",
          describe_favorite_color(p.favorite_color)),
-  ) if s]
-  if pose:
-    lines.append("Pose and scene:")
-    lines.extend(pose)
-  # Behavior and state — drives expression / posture / mood cues.
-  behavior = [s for s in (
     _sub("Traits affecting expression",
          ", ".join(p.traits) if p.traits else None),
     _sub("Personality/expression", _personality(p)),
@@ -1168,20 +1325,22 @@ def render_portrait(
     _sub("Pilot state", _pilot_state_value(p, def_labels)),
     _sub("Commanded mechs",
          _commanded_mechs_value(p.commanded_mechs, def_labels)),
-    _sub("Connections", _connections_value(p.connections, def_labels)),
     _sub("Bonded animals",
          _bonded_animals_value(p.bonded_animals, def_labels)),
-    _sub("Abilities", _abilities_value(p.abilities, def_labels)),
-    _sub("Psyfocus", _psyfocus_value(p.psyfocus)),
   ) if s]
-  if behavior:
-    lines.append("Behavior and state:")
-    lines.extend(behavior)
-  lines.extend(_ideo_block_lines(p.ideo))
-  lines.extend(_map_block_lines(map_context))
-  lines.extend(_apparel_section(
-    p.apparel, def_descriptions, def_labels, def_cost_materials,
-  ))
+  if pose_lines:
+    lines.append("Pose, action, and state:")
+    lines.extend(pose_lines)
+    lines.append("")
+  # Environment — ideology + colony/map context.
+  env_lines = _ideo_block_lines(p.ideo) + _map_block_lines(map_context)
+  if env_lines:
+    lines.append("Environment:")
+    lines.extend(env_lines)
+    lines.append("")
+  # Drop trailing blank line before the closing tag if present.
+  while lines and lines[-1] == "":
+    lines.pop()
   lines.append("[/PORTRAIT SUBJECT]")
   block = "\n".join(lines)
   if include_instruction:
@@ -1198,11 +1357,13 @@ def _person_block(
   def_labels: dict[str, str] | None = None,
   def_categories: dict[str, str] | None = None,
   def_cost_materials: dict[str, str] | None = None,
+  def_tech_levels: dict[str, str] | None = None,
+  def_apparel_layers: dict[str, str] | None = None,
 ) -> list[str]:
   lines: list[str] = ["[PERSON]"]
   name = p.label or p.nickname or p.name_full
   # Identity.
-  for ln in (
+  identity = [ln for ln in (
     _line("Name", name),
     _line("Relation to focus pawn", relation_to_focus),
     _line("Role", p.role.capitalize() if p.role else None),
@@ -1214,9 +1375,11 @@ def _person_block(
     _line("Age", _age_str(p.bio_age, p.chrono_age)),
     _line("Head and face",
           _compact_head_and_face(p, def_labels, def_categories)),
-  ):
-    if ln:
-      lines.append(ln)
+  ) if ln]
+  if identity:
+    lines.append("Identity:")
+    lines.extend(identity)
+    lines.append("")
   # Body.
   body = [s for s in (
     _sub("Visible genes/body traits",
@@ -1227,28 +1390,30 @@ def _person_block(
   if body:
     lines.append("Body:")
     lines.extend(body)
-  # Apparel.
+    lines.append("")
+  # Apparel — worn + visual descriptions + carried in one section.
   apparel = [s for s in (
     *(_sub(label, value)
-      for label, value in _gear_lines(p, def_labels, def_cost_materials)),
+      for label, value in _gear_lines(
+        p, def_labels, def_cost_materials, def_tech_levels,
+        def_apparel_layers)),
     _sub("Carrying infant in arms", _carrying_infant(p)),
-    _sub("Carrying (pack/inventory)", _carrying_summary(p, def_labels)),
   ) if s]
-  if apparel:
+  visual = _apparel_section(
+    p.apparel, def_descriptions, def_labels, def_cost_materials,
+    def_tech_levels, def_apparel_layers,
+  )
+  if apparel or visual:
     lines.append("Apparel:")
     lines.extend(apparel)
-  # Pose and scene.
-  pose = [s for s in (
+    lines.extend(visual)
+    lines.append("")
+  # Pose, action, and state.
+  pose_lines = [s for s in (
     _sub("Pose/activity before portrait", p.current_job),
     _sub("Setting", _setting_value(p)),
     _sub("Favorite color/accent",
          describe_favorite_color(p.favorite_color)),
-  ) if s]
-  if pose:
-    lines.append("Pose and scene:")
-    lines.extend(pose)
-  # Behavior and state.
-  behavior = [s for s in (
     _sub("Traits affecting expression",
          ", ".join(p.traits) if p.traits else None),
     _sub("Personality/expression", _personality(p)),
@@ -1267,15 +1432,15 @@ def _person_block(
     _sub("Pilot state", _pilot_state_value(p, def_labels)),
     _sub("Commanded mechs",
          _commanded_mechs_value(p.commanded_mechs, def_labels)),
-    _sub("Connections", _connections_value(p.connections, def_labels)),
     _sub("Bonded animals",
          _bonded_animals_value(p.bonded_animals, def_labels)),
-    _sub("Abilities", _abilities_value(p.abilities, def_labels)),
-    _sub("Psyfocus", _psyfocus_value(p.psyfocus)),
   ) if s]
-  if behavior:
-    lines.append("Behavior and state:")
-    lines.extend(behavior)
+  if pose_lines:
+    lines.append("Pose, action, and state:")
+    lines.extend(pose_lines)
+    lines.append("")
+  while lines and lines[-1] == "":
+    lines.pop()
   lines.append("[/PERSON]")
   return lines
 
@@ -1290,6 +1455,8 @@ def render_family(
   def_labels: dict[str, str] | None = None,
   def_categories: dict[str, str] | None = None,
   def_cost_materials: dict[str, str] | None = None,
+  def_tech_levels: dict[str, str] | None = None,
+  def_apparel_layers: dict[str, str] | None = None,
 ) -> str:
   """Build the [FAMILY PORTRAIT SUBJECT] block.
 
@@ -1302,12 +1469,15 @@ def render_family(
   if focus.ideo:
     for ln in (
       _line("Shared ideology/culture", focus.ideo.name),
-      _line("Ideology primary color", describe_rgba(focus.ideo.color)),
+      _line("Ideology primary color",
+            rgba_to_name(focus.ideo.color)
+            if focus.ideo.color else None),
       _line("Ideology apparel color",
-            describe_rgba(focus.ideo.apparel_color)),
+            rgba_to_name(focus.ideo.apparel_color)
+            if focus.ideo.apparel_color else None),
       _line("Ideology style aesthetic",
             _style_categories_value(focus.ideo)),
-      _line("Ideology memes", ", ".join(focus.ideo.memes) or None),
+      _line("Ideology memes", _meme_list(focus.ideo.memes)),
     ):
       if ln:
         lines.append(ln)
@@ -1323,7 +1493,7 @@ def render_family(
   lines.extend(_person_block(
     focus, "Focus pawn (centre of the family portrait)",
     def_descriptions, def_labels, def_categories,
-    def_cost_materials,
+    def_cost_materials, def_tech_levels, def_apparel_layers,
   ))
   if members:
     lines.append("Family/direct relations from focus pawn:")
@@ -1334,7 +1504,8 @@ def render_family(
     for rel, other in members:
       lines.extend(_person_block(
         other, rel.def_name, def_descriptions, def_labels,
-        def_categories, def_cost_materials,
+        def_categories, def_cost_materials, def_tech_levels,
+        def_apparel_layers,
       ))
   lines.append("[/FAMILY PORTRAIT SUBJECT]")
   block = "\n".join(lines)
