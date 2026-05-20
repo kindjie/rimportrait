@@ -893,13 +893,21 @@ def _weather_label(def_name: str | None) -> str | None:
 
 
 def _map_for_pawn(save: Save, pawn_el: etree._Element) -> etree._Element | None:
-  map_id_raw = pawn_el.findtext("map")
-  if not map_id_raw:
+  """Find the <li> map element that contains this pawn.
+
+  Uses the pre-indexed pawn -> map containment built at load time
+  (Save.pawn_to_map). The pawn's own ``<map>N`` field stores N as
+  the in-game map id, not the list index, so matching against
+  ``<uniqueID>`` is unreliable (e.g. uniqueIDs can be non-sequential
+  like 0 and 35 while ``<map>`` says 1).
+  """
+  pid = pawn_el.findtext("id")
+  if not pid:
     return None
-  for m in save.root.iterfind(".//maps/li"):
-    if m.findtext("uniqueID") == map_id_raw:
-      return m
-  return None
+  idx = save.pawn_to_map.get(pid)
+  if idx is None or idx >= len(save.map_elements):
+    return None
+  return save.map_elements[idx]
 
 
 def _colonist_count(save: Save) -> int:

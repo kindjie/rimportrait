@@ -34,6 +34,7 @@ class Save:
   player_faction_id: str | None = None
   current_tick: int = 0
   maps: list[MapData] = field(default_factory=list)
+  map_elements: list[etree._Element] = field(default_factory=list)
   pawn_to_map: dict[str, int] = field(default_factory=dict)
   time_hour: int | None = None
   time_period: str | None = None
@@ -140,14 +141,18 @@ def _current_tick(root: etree._Element) -> int:
 
 def _index_maps_and_pawns(
   root: etree._Element,
-) -> tuple[list[MapData], dict[str, int]]:
+) -> tuple[list[MapData], list[etree._Element], dict[str, int]]:
   """Decode each map's roof grid + build a pawn_id -> map index.
 
   Pawns live inside their map's ``<things>`` container. We walk each
   map ``<li>`` (those with ``<mapInfo>``), decode its roof grid, and
-  index every pawn under that map.
+  index every pawn under that map. The map element is returned in
+  parallel so callers needing other map-scoped fields (weather,
+  game-condition threats, etc.) don't need to redo the containment
+  walk.
   """
   maps: list[MapData] = []
+  map_elements: list[etree._Element] = []
   pawn_to_map: dict[str, int] = {}
   for map_el in root.iter("li"):
     info = map_el.find("mapInfo")
@@ -171,13 +176,14 @@ def _index_maps_and_pawns(
       continue
     idx = len(maps)
     maps.append(MapData(size_x=size_x, size_z=size_z, roof=roof))
+    map_elements.append(map_el)
     for thing in map_el.iter("thing"):
       if thing.attrib.get("Class") != "Pawn":
         continue
       pid = thing.findtext("id")
       if pid:
         pawn_to_map[pid] = idx
-  return maps, pawn_to_map
+  return maps, map_elements, pawn_to_map
 
 
 def load_save(path: str | Path) -> Save:
@@ -188,7 +194,7 @@ def load_save(path: str | Path) -> Save:
   tick = _current_tick(root)
   hour = hour_for_tick(tick) if tick else None
   period = time_period_for_hour(hour) if hour is not None else None
-  maps, pawn_to_map = _index_maps_and_pawns(root)
+  maps, map_elements, pawn_to_map = _index_maps_and_pawns(root)
   return Save(
     root=root,
     pawns_by_id=_index_pawns(root),
@@ -197,6 +203,7 @@ def load_save(path: str | Path) -> Save:
     player_faction_id=_player_faction_id(root),
     current_tick=tick,
     maps=maps,
+    map_elements=map_elements,
     pawn_to_map=pawn_to_map,
     time_hour=hour,
     time_period=period,
