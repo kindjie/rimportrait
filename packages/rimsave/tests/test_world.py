@@ -66,6 +66,85 @@ def test_hour_for_tick_uses_world_utc():
   assert world.hour_for_tick(60000 * 5 + 2500 * 7) == 7
 
 
+@pytest.mark.parametrize("name,expected", [
+  ("RoofConstructed", 5133),
+  ("RoofRockThin", 6699),
+  ("RoofRockThick", 10819),  # base; vanilla saves observe 10820 (bumped +1)
+])
+def test_stable_string_hash_matches_known_def_hashes(name, expected):
+  assert world.stable_string_hash(name) == expected
+
+
+def test_resolve_short_hash_exact_match():
+  table = {5133: "RoofConstructed", 6699: "RoofRockThin"}
+  assert world.resolve_short_hash(5133, table) == "RoofConstructed"
+  assert world.resolve_short_hash(6699, table) == "RoofRockThin"
+
+
+def test_resolve_short_hash_walks_back_to_absorb_bumps():
+  """RimWorld's ShortHashGiver bumps collisions by +1. The observed
+  hash for RoofRockThick in our save is 10820, but stable hash is
+  10819 - the resolver must step back."""
+  table = {10819: "RoofRockThick"}
+  assert world.resolve_short_hash(10820, table) == "RoofRockThick"
+  assert world.resolve_short_hash(10822, table) == "RoofRockThick"
+
+
+def test_resolve_short_hash_returns_none_beyond_fuzz():
+  table = {100: "Foo"}
+  assert world.resolve_short_hash(200, table) is None
+  assert world.resolve_short_hash(105, table) == "Foo"
+
+
+def test_classify_roof_def_vanilla_names():
+  assert "constructed" in world.classify_roof_def("RoofConstructed")
+  assert "thin rock" in world.classify_roof_def("RoofRockThin")
+  assert "thick rock" in world.classify_roof_def("RoofRockThick")
+  # Unknown def -> generic 'roofed' (no-roof case is handled
+  # separately via the 0 shortHash short-circuit).
+  assert world.classify_roof_def("ModdedFancyRoof") == "roofed"
+  assert world.classify_roof_def(None) == "roofed"
+
+
+def test_is_substructure_def_vanilla_and_modded():
+  assert world.is_substructure_def("Substructure")
+  assert world.is_substructure_def("ModdedSubstructure")
+  assert world.is_substructure_def("MySubstructureFoundation")
+  assert world.is_substructure_def("MyGravshipFoundation")
+  assert world.is_substructure_def("GravshipFloor")
+  assert not world.is_substructure_def("PavedTile")
+  assert not world.is_substructure_def("Bridge")
+  assert not world.is_substructure_def(None)
+
+
+def test_is_bridge_def_vanilla_variants():
+  assert world.is_bridge_def("Bridge")
+  assert world.is_bridge_def("HeavyBridge")
+  assert world.is_bridge_def("ModdedFancyBridge")
+  assert not world.is_bridge_def("Substructure")
+  assert not world.is_bridge_def("PavedTile")
+  assert not world.is_bridge_def(None)
+
+
+def test_map_data_terrain_at_falls_back_to_zero_when_empty():
+  m = world.MapData(size_x=2, size_z=2, roof=(0, 0, 0, 0))
+  # terrain defaults to empty tuple; lookups return 0 (no terrain).
+  assert m.terrain_at(0, 0) == 0
+  assert m.terrain_at(1, 1) == 0
+
+
+def test_map_data_terrain_at_returns_cell_value():
+  m = world.MapData(
+    size_x=2, size_z=2,
+    roof=(0, 0, 0, 0),
+    terrain=(100, 200, 300, 400),
+  )
+  assert m.terrain_at(0, 0) == 100
+  assert m.terrain_at(1, 0) == 200
+  assert m.terrain_at(0, 1) == 300
+  assert m.terrain_at(1, 1) == 400
+
+
 @pytest.mark.parametrize("hour,expected", [
   (0, "night"),
   (4, "night"),

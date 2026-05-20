@@ -483,6 +483,12 @@ def _build_index(
   index = build_def_index_from_save(save, paths)
   if not index:
     return (None, None, None, None)
+  # Populate Save's roof/terrain shortHash -> defName lookups so
+  # roof_kind / terrain_kind on PawnRecord can resolve to readable
+  # labels (otherwise they'd be None even when the def index is
+  # loaded).
+  from rimsave import register_def_short_hashes
+  register_def_short_hashes(save, index)
   return (
     index,  # for extractors (hair_texture_path enrichment)
     index_to_descriptions(index),

@@ -972,6 +972,35 @@ def _style_categories_value(ideo: IdeoRecord) -> str | None:
   return ", ".join(parts)
 
 
+def _setting_value(p: PawnRecord) -> str | None:
+  """Compose a single 'Setting:' line from outdoor/roof/terrain/map_kind/
+  caravan flags. Returns None when no signal is available at all."""
+  if p.caravan:
+    return "traveling in a caravan (no map)"
+  # Terrain override - substructure means gravship, regardless of roof
+  # or map_kind label.
+  if p.terrain_kind == "substructure":
+    suffix = f", on a {p.map_kind}" if p.map_kind else ""
+    return f"inside a gravship (built on substructure){suffix}"
+  if p.terrain_kind == "bridge":
+    suffix = f", {p.map_kind}" if p.map_kind else ""
+    return f"outdoors on a bridge{suffix}"
+  # Roof + map_kind composition.
+  parts: list[str] = []
+  if p.outdoor is True:
+    parts.append("outdoors")
+  elif p.outdoor is False:
+    if p.roof_kind:
+      parts.append(p.roof_kind)
+    else:
+      parts.append("indoors")
+  if p.map_kind:
+    parts.append(p.map_kind)
+  if not parts:
+    return None
+  return ", ".join(parts)
+
+
 def _time_of_day_value(m: MapContext) -> str | None:
   if m.time_hour is None and m.time_period is None:
     return None
@@ -1073,10 +1102,7 @@ def render_portrait(
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity", p.current_job),
-    _line("Outdoors/indoors",
-          None if p.outdoor is None else
-          ("outdoors (unroofed tile)" if p.outdoor
-           else "indoors (roofed tile)")),
+    _line("Setting", _setting_value(p)),
     _line("Immediate setting", p.location),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),
@@ -1150,10 +1176,7 @@ def _person_block(
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity before portrait", p.current_job),
-    _line("Outdoors/indoors",
-          None if p.outdoor is None else
-          ("outdoors (unroofed tile)" if p.outdoor
-           else "indoors (roofed tile)")),
+    _line("Setting", _setting_value(p)),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),
     _line("Visible genes/body traits",

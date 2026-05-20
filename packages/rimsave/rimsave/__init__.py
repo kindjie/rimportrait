@@ -17,7 +17,12 @@ from .body_parts import (
   parse_body_part_index,
 )
 from .defs import autodetect_rimworld_dir, load_def_descriptions, load_def_labels
-from .load import Save, load_save
+from .load import (
+  CaravanInfo,
+  Save,
+  load_save,
+  register_def_short_hashes,
+)
 from .mods import (
   DefRecord,
   ModEntry,

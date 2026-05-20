@@ -165,6 +165,22 @@ class PawnRecord:
   # True when the pawn's tile has no roof (outdoor), False when
   # roofed (indoor), None when the position or map data is missing.
   outdoor: bool | None = None
+  # Coarse roof label resolved through the mod-aware RoofDef index.
+  # 'constructed roof', 'thin rock overhead (mountain tunnel)',
+  # 'thick rock overhead (deep mountain)', 'rock overhead', 'roofed',
+  # or None when outdoor / unknown.
+  roof_kind: str | None = None
+  # 'substructure' when the pawn is standing on a gravship foundation
+  # (vanilla Substructure or a modded equivalent); 'bridge' for
+  # Bridge / HeavyBridge terrain; None when neither applies.
+  terrain_kind: str | None = None
+  # Map's parent WorldObject def -> coarse setting label
+  # ('terrestrial settlement', 'space settlement (orbital)',
+  # 'asteroid base', 'escape ship in transit', 'gravship in launch',
+  # 'unknown setting (<def>)') or None when the pawn is in a caravan.
+  map_kind: str | None = None
+  # True when the pawn is currently in a caravan (no map).
+  caravan: bool = False
   hair_def: str | None = None
   hair_label: str | None = None
   hair_texture_path: str | None = None

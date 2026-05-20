@@ -23,13 +23,21 @@ from dataclasses import dataclass
 TICKS_PER_DAY = 60000
 TICKS_PER_HOUR = 2500
 
+# Tolerance window when resolving an observed grid shortHash back to
+# a def name. RimWorld's ShortHashGiver bumps collisions by +1 across
+# all DefTypes; without iterating every def in the game we can't know
+# exact collision sets, but in practice 0-3 bumps cover the vanilla
+# load order. Increase if a modded save shows mis-resolutions.
+SHORTHASH_FUZZ = 5
+
 
 @dataclass(frozen=True)
 class MapData:
   """Decoded per-map data needed for pawn-position lookups."""
   size_x: int
   size_z: int
-  roof: tuple[int, ...]  # length size_x * size_z, ushort values
+  roof: tuple[int, ...]  # length size_x * size_z, ushort roof short-hashes
+  terrain: tuple[int, ...] = ()  # same shape, terrain short-hashes (0 = unset)
 
   def roof_at(self, x: int, z: int) -> int:
     if not (0 <= x < self.size_x and 0 <= z < self.size_z):
@@ -38,6 +46,13 @@ class MapData:
 
   def is_outdoor(self, x: int, z: int) -> bool:
     return self.roof_at(x, z) == 0
+
+  def terrain_at(self, x: int, z: int) -> int:
+    if not (0 <= x < self.size_x and 0 <= z < self.size_z):
+      return 0
+    if not self.terrain:
+      return 0
+    return self.terrain[x + z * self.size_x]
 
 
 def decompress_grid_ushorts(b64_text: str) -> tuple[int, ...]:
@@ -69,6 +84,85 @@ def parse_pos(text: str | None) -> tuple[int, int] | None:
 def hour_for_tick(ticks_game: int) -> int:
   """In-game hour 0-23 from raw ``ticksGame``."""
   return (ticks_game % TICKS_PER_DAY) // TICKS_PER_HOUR
+
+
+def stable_string_hash(s: str) -> int:
+  """RimWorld's ``GenText.StableStringHash``: polynomial-31 over chars,
+  base 23, wrapping as C# signed int32, then ``% 65535`` with negative
+  wrap to non-negative. Used to compute ``Def.shortHash`` before
+  ``ShortHashGiver`` collision-bumping is applied.
+  """
+  num = 23
+  for c in s:
+    num = num * 31 + ord(c)
+    num = num & 0xFFFFFFFF
+    if num >= 1 << 31:
+      num -= 1 << 32
+  h = num % 65535
+  if h < 0:
+    h += 65535
+  return h
+
+
+def resolve_short_hash(
+  observed: int,
+  base_hashes: dict[int, str],
+  fuzz: int = SHORTHASH_FUZZ,
+) -> str | None:
+  """Resolve an observed short-hash to a def name.
+
+  ``base_hashes`` maps the *unbumped* StableStringHash of each
+  candidate def name to that def name. We try exact match first, then
+  walk backwards up to ``fuzz`` steps to absorb collision bumps
+  (RimWorld's ``ShortHashGiver`` increments by +1 on collisions).
+  """
+  if observed in base_hashes:
+    return base_hashes[observed]
+  for step in range(1, fuzz + 1):
+    candidate = observed - step
+    if candidate in base_hashes:
+      return base_hashes[candidate]
+  return None
+
+
+def classify_roof_def(def_name: str | None) -> str:
+  """Map a RoofDef name to a coarse readable label."""
+  if not def_name:
+    return "roofed"  # unknown roof; only no-roof (shortHash 0) is "unroofed"
+  n = def_name.lower()
+  if n == "roofconstructed":
+    return "constructed roof"
+  if n == "roofrockthin":
+    return "thin rock overhead (mountain tunnel)"
+  if n == "roofrockthick":
+    return "thick rock overhead (deep mountain)"
+  if "rock" in n:
+    return "rock overhead"
+  return "roofed"
+
+
+def is_substructure_def(def_name: str | None) -> bool:
+  """Substructure (gravship foundation), vanilla or modded."""
+  if not def_name:
+    return False
+  n = def_name.lower()
+  if n == "substructure":
+    return True
+  # Modded gravship foundations tend to include 'substructure' or
+  # 'gravship_foundation' in the def name.
+  if "substructure" in n:
+    return True
+  if "gravship" in n and ("foundation" in n or "floor" in n):
+    return True
+  return False
+
+
+def is_bridge_def(def_name: str | None) -> bool:
+  """Bridge / HeavyBridge (over-water crossing)."""
+  if not def_name:
+    return False
+  n = def_name.lower()
+  return n in ("bridge", "heavybridge") or n.endswith("bridge")
 
 
 # Banding mirrors the existing --time CLI choices so the same six

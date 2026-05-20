@@ -14,12 +14,40 @@ from lxml import etree
 
 from .world import (
   MapData,
+  classify_roof_def,
   decompress_grid_ushorts,
   hour_for_tick,
+  is_bridge_def,
+  is_substructure_def,
   parse_pos,
   parse_size,
+  resolve_short_hash,
+  stable_string_hash,
   time_period_for_hour,
 )
+
+
+# WorldObject def -> coarse human label for the colony's setting.
+_MAP_KIND_LABELS: dict[str, str] = {
+  "Settlement": "terrestrial settlement",
+  "SpaceSettlement": "space settlement (orbital)",
+  "AsteroidBasic": "asteroid base",
+  "AsteroidMiningSite": "asteroid mining site",
+  "EscapeShip": "escape ship in transit",
+  "GravshipLaunch": "gravship in launch",
+}
+
+
+@dataclass(frozen=True)
+class CaravanInfo:
+  """Minimal record of a pawn's caravan membership.
+
+  tile is the world tile the caravan currently occupies; pawn count
+  is just informational.
+  """
+  caravan_id: str
+  tile: int | None
+  pawn_count: int
 
 
 PAWN_ID_PREFIXES = ("Thing_", "")
@@ -35,7 +63,13 @@ class Save:
   current_tick: int = 0
   maps: list[MapData] = field(default_factory=list)
   map_elements: list[etree._Element] = field(default_factory=list)
+  map_kinds: list[str | None] = field(default_factory=list)
   pawn_to_map: dict[str, int] = field(default_factory=dict)
+  pawn_to_caravan: dict[str, CaravanInfo] = field(default_factory=dict)
+  # Resolved {shortHash: defName} populated when a mod-aware def
+  # index is built via setting_detection().
+  roof_short_to_def: dict[int, str] = field(default_factory=dict)
+  terrain_short_to_def: dict[int, str] = field(default_factory=dict)
   time_hour: int | None = None
   time_period: str | None = None
   _things_by_id: dict[str, str] | None = None
@@ -61,6 +95,60 @@ class Save:
     if ref.startswith("Thing_"):
       ref = ref[len("Thing_"):]
     return self._things_by_id.get(ref)
+
+  def map_kind_for_pawn(self, pawn_id: str | None) -> str | None:
+    """Coarse setting label derived from the pawn's map's parent
+    WorldObject def. None if the pawn is not on any map."""
+    if not pawn_id:
+      return None
+    idx = self.pawn_to_map.get(pawn_id)
+    if idx is None or idx >= len(self.map_kinds):
+      return None
+    return self.map_kinds[idx]
+
+  def roof_kind_for_pawn(self, pawn_id: str | None) -> str | None:
+    """Readable roof label for the pawn's tile (None when outdoors
+    or when the pawn's position is unknown)."""
+    if not pawn_id:
+      return None
+    map_idx = self.pawn_to_map.get(pawn_id)
+    pawn_el = self.pawns_by_id.get(pawn_id)
+    if map_idx is None or pawn_el is None:
+      return None
+    pos = parse_pos(pawn_el.findtext("pos"))
+    if pos is None:
+      return None
+    short = self.maps[map_idx].roof_at(*pos)
+    if short == 0:
+      return None
+    def_name = resolve_short_hash(short, self.roof_short_to_def)
+    return classify_roof_def(def_name)
+
+  def terrain_kind_for_pawn(
+    self, pawn_id: str | None
+  ) -> str | None:
+    """Returns 'substructure' if the pawn is on a gravship
+    foundation, 'bridge' if on a bridge, else None. Used as an
+    override on top of the roof/map composition.
+    """
+    if not pawn_id:
+      return None
+    map_idx = self.pawn_to_map.get(pawn_id)
+    pawn_el = self.pawns_by_id.get(pawn_id)
+    if map_idx is None or pawn_el is None:
+      return None
+    pos = parse_pos(pawn_el.findtext("pos"))
+    if pos is None:
+      return None
+    short = self.maps[map_idx].terrain_at(*pos)
+    if short == 0:
+      return None
+    def_name = resolve_short_hash(short, self.terrain_short_to_def)
+    if is_substructure_def(def_name):
+      return "substructure"
+    if is_bridge_def(def_name):
+      return "bridge"
+    return None
 
   def pawn_outdoor(self, pawn_id: str | None) -> bool | None:
     """Return True if the pawn is at an unroofed cell, False if
@@ -139,20 +227,50 @@ def _current_tick(root: etree._Element) -> int:
     return 0
 
 
+def _decompress_optional(b64: str | None) -> tuple[int, ...]:
+  if not b64:
+    return ()
+  try:
+    return decompress_grid_ushorts(b64.strip())
+  except Exception:
+    return ()
+
+
+def _world_object_def_by_id(
+  root: etree._Element,
+) -> dict[str, str]:
+  """Map WorldObject ID -> def. The id field is ``<ID>`` (not the
+  ``<loadID>`` we use elsewhere); map ``mapInfo/parent`` references
+  resolve through this index."""
+  out: dict[str, str] = {}
+  for container in root.iter("worldObjects"):
+    parent = container.getparent()
+    if parent is None or parent.tag != "worldObjects":
+      # Outer wrapper; the real list is one level down.
+      continue
+    for li in container.iterfind("li"):
+      wid = li.findtext("ID") or li.findtext("loadID")
+      d = li.findtext("def")
+      if wid and d:
+        out[wid] = d
+  return out
+
+
 def _index_maps_and_pawns(
   root: etree._Element,
-) -> tuple[list[MapData], list[etree._Element], dict[str, int]]:
-  """Decode each map's roof grid + build a pawn_id -> map index.
-
-  Pawns live inside their map's ``<things>`` container. We walk each
-  map ``<li>`` (those with ``<mapInfo>``), decode its roof grid, and
-  index every pawn under that map. The map element is returned in
-  parallel so callers needing other map-scoped fields (weather,
-  game-condition threats, etc.) don't need to redo the containment
-  walk.
+) -> tuple[
+  list[MapData],
+  list[etree._Element],
+  list[str | None],
+  dict[str, int],
+]:
+  """Decode each map's roof + terrain grids + map-kind labels +
+  build a pawn_id -> map index.
   """
+  wo_defs = _world_object_def_by_id(root)
   maps: list[MapData] = []
   map_elements: list[etree._Element] = []
+  map_kinds: list[str | None] = []
   pawn_to_map: dict[str, int] = {}
   for map_el in root.iter("li"):
     info = map_el.find("mapInfo")
@@ -162,28 +280,77 @@ def _index_maps_and_pawns(
     if size is None:
       continue
     size_x, size_z = size
-    roof_b64 = None
     roof_el = map_el.find(".//roofGrid/roofsDeflate")
-    if roof_el is not None and roof_el.text:
-      roof_b64 = roof_el.text.strip()
+    roof_b64 = (
+      roof_el.text.strip()
+      if roof_el is not None and roof_el.text else None
+    )
     if not roof_b64:
       continue
-    try:
-      roof = decompress_grid_ushorts(roof_b64)
-    except Exception:
-      continue
+    roof = _decompress_optional(roof_b64)
     if len(roof) != size_x * size_z:
       continue
+    terrain_el = map_el.find(".//terrainGrid/topGridDeflate")
+    terrain_b64 = (
+      terrain_el.text.strip()
+      if terrain_el is not None and terrain_el.text else None
+    )
+    terrain = _decompress_optional(terrain_b64)
+    if len(terrain) != size_x * size_z:
+      terrain = ()  # silently drop on size mismatch
+    parent_ref = info.findtext("parent") or ""
+    parent_id = parent_ref.removeprefix("WorldObject_")
+    parent_def = wo_defs.get(parent_id)
+    map_kind = (
+      _MAP_KIND_LABELS.get(parent_def)
+      or (f"unknown setting ({parent_def})" if parent_def else None)
+    )
     idx = len(maps)
-    maps.append(MapData(size_x=size_x, size_z=size_z, roof=roof))
+    maps.append(MapData(
+      size_x=size_x, size_z=size_z, roof=roof, terrain=terrain,
+    ))
     map_elements.append(map_el)
+    map_kinds.append(map_kind)
     for thing in map_el.iter("thing"):
       if thing.attrib.get("Class") != "Pawn":
         continue
       pid = thing.findtext("id")
       if pid:
         pawn_to_map[pid] = idx
-  return maps, map_elements, pawn_to_map
+  return maps, map_elements, map_kinds, pawn_to_map
+
+
+def _index_caravans(root: etree._Element) -> dict[str, CaravanInfo]:
+  """Map pawn_id -> CaravanInfo for any pawn currently in a caravan
+  (and therefore not on any map)."""
+  out: dict[str, CaravanInfo] = {}
+  for container in root.iter("worldObjects"):
+    for li in container.iter("li"):
+      if (li.findtext("def") or "") != "Caravan":
+        continue
+      lid = li.findtext("loadID") or ""
+      tile_raw = li.findtext("tile") or ""
+      tile: int | None = None
+      try:
+        tile = int(tile_raw.split(",")[0])
+      except (ValueError, IndexError):
+        pass
+      pawn_refs: list[str] = []
+      for pref in li.iterfind(".//pawns//li"):
+        # Caravan pawn refs are 'Thing_HumanXYZ' or similar; strip
+        # the 'Thing_' prefix where present.
+        text = (pref.text or "").strip()
+        if not text:
+          continue
+        if text.startswith("Thing_"):
+          text = text[len("Thing_"):]
+        pawn_refs.append(text)
+      info = CaravanInfo(
+        caravan_id=lid, tile=tile, pawn_count=len(pawn_refs),
+      )
+      for pid in pawn_refs:
+        out[pid] = info
+  return out
 
 
 def load_save(path: str | Path) -> Save:
@@ -194,7 +361,9 @@ def load_save(path: str | Path) -> Save:
   tick = _current_tick(root)
   hour = hour_for_tick(tick) if tick else None
   period = time_period_for_hour(hour) if hour is not None else None
-  maps, map_elements, pawn_to_map = _index_maps_and_pawns(root)
+  maps, map_elements, map_kinds, pawn_to_map = \
+    _index_maps_and_pawns(root)
+  pawn_to_caravan = _index_caravans(root)
   return Save(
     root=root,
     pawns_by_id=_index_pawns(root),
@@ -204,10 +373,36 @@ def load_save(path: str | Path) -> Save:
     current_tick=tick,
     maps=maps,
     map_elements=map_elements,
+    map_kinds=map_kinds,
     pawn_to_map=pawn_to_map,
+    pawn_to_caravan=pawn_to_caravan,
     time_hour=hour,
     time_period=period,
   )
+
+
+def register_def_short_hashes(
+  save: Save, def_index: dict[str, object] | None
+) -> None:
+  """Populate Save's roof / terrain shortHash -> defName lookups
+  from a mod-aware def index. Call this after
+  ``build_def_index_from_save`` if you want roof_kind / terrain_kind
+  resolution on PawnRecord. Idempotent.
+  """
+  if not def_index:
+    return
+  roof: dict[int, str] = {}
+  terrain: dict[int, str] = {}
+  for def_name, rec in def_index.items():
+    # rec is a DefRecord; def_type tells us which table to fill.
+    def_type = getattr(rec, "def_type", None)
+    h = stable_string_hash(def_name)
+    if def_type == "RoofDef":
+      roof[h] = def_name
+    elif def_type == "TerrainDef":
+      terrain[h] = def_name
+  save.roof_short_to_def = roof
+  save.terrain_short_to_def = terrain
 
 
 def resolve_pawn_ref(save: Save, ref: str) -> etree._Element | None:

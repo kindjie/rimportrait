@@ -118,3 +118,33 @@ def test_ideo_resolved_for_some_colonist(save):
       assert p.ideo.name
       return
   pytest.skip("no colonist with an ideology in this save")
+
+
+def test_setting_fields_populated_when_def_index_loaded(save):
+  """outdoor + map_kind + roof_kind populate when the mod-aware def
+  index has been registered. roof_kind requires a non-zero roof
+  shortHash to resolve to a label."""
+  from rimsave import (
+    autodetect_mod_paths, build_def_index_from_save,
+    iter_colonists, register_def_short_hashes,
+  )
+  paths = autodetect_mod_paths()
+  if paths.rimworld_data is None:
+    pytest.skip("rimworld Data dir not detected; mod index unavailable")
+  idx = build_def_index_from_save(save, paths)
+  if not idx:
+    pytest.skip("def index empty (no installed mods?)")
+  register_def_short_hashes(save, idx)
+
+  colonists = list(iter_colonists(save))
+  if not colonists:
+    pytest.skip("no colonists")
+
+  # Every colonist has a non-None outdoor bit (their position
+  # resolves through the per-map roof grid).
+  assert all(p.outdoor is not None for p in colonists)
+  # Every colonist has a map_kind label.
+  assert all(p.map_kind for p in colonists)
+  # At least one colonist has a roof_kind label (i.e. is indoors and
+  # the roof def resolved through the shortHash lookup).
+  assert any(p.roof_kind for p in colonists)

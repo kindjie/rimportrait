@@ -50,6 +50,9 @@ _INTERESTING_DEF_TYPES = (
   "CreepJoinerDownsideDef",
   "CreepjoinerRejectionDef",
   "CreepJoinerAggressiveDef",
+  # Setting-detection defs (per-cell map data resolves through these).
+  "RoofDef",
+  "TerrainDef",
 )
 
 
