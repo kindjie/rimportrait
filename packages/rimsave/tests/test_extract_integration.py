@@ -120,6 +120,25 @@ def test_ideo_resolved_for_some_colonist(save):
   pytest.skip("no colonist with an ideology in this save")
 
 
+def test_biome_recovered_from_past_tales(save):
+  """Biome is sourced from <tales>/<surroundings>. Any actively-played
+  colony will have tales at its tile, so we expect at least one
+  colonist whose map_context_for() returns a non-None biome."""
+  from rimsave import iter_colonists, map_context_for
+  hits = []
+  for p in iter_colonists(save):
+    ctx = map_context_for(save, p)
+    if ctx and ctx.biome:
+      hits.append((p.label or p.name_full, ctx.biome))
+      if len(hits) >= 3:
+        break
+  if not hits:
+    pytest.skip("no biome recovered from tales for any colonist tile")
+  # Biome is humanised CamelCase -> lowercase with spaces.
+  for _, biome in hits:
+    assert biome.islower() or " " in biome
+
+
 def test_setting_fields_populated_when_def_index_loaded(save):
   """outdoor + map_kind + roof_kind populate when the mod-aware def
   index has been registered. roof_kind requires a non-zero roof

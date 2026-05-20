@@ -288,9 +288,12 @@ Always overridable:
 - **Map wealth isn't serialised by RimWorld** — it's computed at
   runtime. Pass `--wealth <number>` from the in-game UI to populate
   the tier line; otherwise the line is omitted.
-- **Biome auto-decode deferred.** Biome lives in `tileBiomeDeflate`
-  (base64+zlib), keyed by a tile-index that varies per mod loadout.
-  Pass `--biome "..."` for now.
+- **Biome is recovered from past tales** (the save's `<tales>` /
+  `<surroundings>` records). Works for any colony that has had
+  events at its tile - effectively every actively-played colony. For
+  young saves with no tales at the colony tile, biome is omitted;
+  pass `--biome "..."` to fill it in. Full per-tile decode of
+  `tileBiomeDeflate` is deferred.
 - **Pose/activity is the raw job def** (e.g. `HaulToCell`) — no
   target/verb resolution yet.
 - **Temperature not extracted.** Not reliably in the save.

@@ -946,8 +946,9 @@ def map_context_for(
       if d:
         threat_defs.append(d)
     threats = tuple(threat_defs)
+  biome_def = save.biome_for_pawn(pawn.pawn_id)
   return MapContext(
-    biome=None,  # tile-biome decoding deferred
+    biome=_weather_label(biome_def),  # CamelCase -> 'temperate forest'
     weather=weather,
     wealth=wealth_override,
     population=_colonist_count(save),

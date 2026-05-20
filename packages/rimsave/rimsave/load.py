@@ -64,6 +64,11 @@ class Save:
   maps: list[MapData] = field(default_factory=list)
   map_elements: list[etree._Element] = field(default_factory=list)
   map_kinds: list[str | None] = field(default_factory=list)
+  # World tile id of each map's parent WorldObject. Used to look up
+  # the biome via tile_to_biome (which is sourced from past tales -
+  # there is no in-save current-biome field per map).
+  map_tiles: list[int | None] = field(default_factory=list)
+  tile_to_biome: dict[int, str] = field(default_factory=dict)
   pawn_to_map: dict[str, int] = field(default_factory=dict)
   pawn_to_caravan: dict[str, CaravanInfo] = field(default_factory=dict)
   # Resolved {shortHash: defName} populated when a mod-aware def
@@ -95,6 +100,20 @@ class Save:
     if ref.startswith("Thing_"):
       ref = ref[len("Thing_"):]
     return self._things_by_id.get(ref)
+
+  def biome_for_pawn(self, pawn_id: str | None) -> str | None:
+    """BiomeDef name of the pawn's map's parent world tile, sourced
+    from past tales surroundings. Returns None when the pawn is not
+    on a map or no tale has recorded a biome for that tile."""
+    if not pawn_id:
+      return None
+    idx = self.pawn_to_map.get(pawn_id)
+    if idx is None or idx >= len(self.map_tiles):
+      return None
+    tile = self.map_tiles[idx]
+    if tile is None:
+      return None
+    return self.tile_to_biome.get(tile)
 
   def map_kind_for_pawn(self, pawn_id: str | None) -> str | None:
     """Coarse setting label derived from the pawn's map's parent
@@ -236,24 +255,58 @@ def _decompress_optional(b64: str | None) -> tuple[int, ...]:
     return ()
 
 
-def _world_object_def_by_id(
+def _world_object_index(
   root: etree._Element,
-) -> dict[str, str]:
-  """Map WorldObject ID -> def. The id field is ``<ID>`` (not the
-  ``<loadID>`` we use elsewhere); map ``mapInfo/parent`` references
-  resolve through this index."""
-  out: dict[str, str] = {}
+) -> dict[str, tuple[str, int | None]]:
+  """Map WorldObject ID -> (def, tile). The id field is ``<ID>``
+  (not the ``<loadID>`` we use elsewhere); map ``mapInfo/parent``
+  references resolve through this index. ``tile`` is the world tile
+  the WorldObject sits on (None if missing or unparseable)."""
+  out: dict[str, tuple[str, int | None]] = {}
   for container in root.iter("worldObjects"):
     parent = container.getparent()
     if parent is None or parent.tag != "worldObjects":
-      # Outer wrapper; the real list is one level down.
       continue
     for li in container.iterfind("li"):
       wid = li.findtext("ID") or li.findtext("loadID")
       d = li.findtext("def")
-      if wid and d:
-        out[wid] = d
+      if not (wid and d):
+        continue
+      tile_raw = li.findtext("tile") or ""
+      tile: int | None = None
+      try:
+        tile = int(tile_raw.split(",")[0])
+      except (ValueError, IndexError):
+        pass
+      out[wid] = (d, tile)
   return out
+
+
+def _index_biome_by_tile(root: etree._Element) -> dict[int, str]:
+  """Build {world_tile_id: BiomeDef name} from past tales.
+
+  The save's <tales> section records the surroundings of past
+  events. Each ``<surroundings>`` element carries a ``<tile>`` and a
+  ``<biome>`` def name. Biome does not change for a tile, so the
+  first reading per tile is authoritative; we still take the most
+  common as a defensive measure against any stale entries.
+  """
+  counts: dict[int, dict[str, int]] = {}
+  for surr in root.iter("surroundings"):
+    tile_raw = surr.findtext("tile") or ""
+    biome = (surr.findtext("biome") or "").strip()
+    if not biome:
+      continue
+    try:
+      tile = int(tile_raw.split(",")[0])
+    except (ValueError, IndexError):
+      continue
+    bucket = counts.setdefault(tile, {})
+    bucket[biome] = bucket.get(biome, 0) + 1
+  return {
+    tile: max(b.items(), key=lambda kv: kv[1])[0]
+    for tile, b in counts.items()
+  }
 
 
 def _index_maps_and_pawns(
@@ -262,15 +315,17 @@ def _index_maps_and_pawns(
   list[MapData],
   list[etree._Element],
   list[str | None],
+  list[int | None],
   dict[str, int],
 ]:
   """Decode each map's roof + terrain grids + map-kind labels +
-  build a pawn_id -> map index.
+  parent tile + a pawn_id -> map index.
   """
-  wo_defs = _world_object_def_by_id(root)
+  wo_index = _world_object_index(root)
   maps: list[MapData] = []
   map_elements: list[etree._Element] = []
   map_kinds: list[str | None] = []
+  map_tiles: list[int | None] = []
   pawn_to_map: dict[str, int] = {}
   for map_el in root.iter("li"):
     info = map_el.find("mapInfo")
@@ -300,9 +355,11 @@ def _index_maps_and_pawns(
       terrain = ()  # silently drop on size mismatch
     parent_ref = info.findtext("parent") or ""
     parent_id = parent_ref.removeprefix("WorldObject_")
-    parent_def = wo_defs.get(parent_id)
+    wo = wo_index.get(parent_id)
+    parent_def: str | None = wo[0] if wo else None
+    parent_tile: int | None = wo[1] if wo else None
     map_kind = (
-      _MAP_KIND_LABELS.get(parent_def)
+      _MAP_KIND_LABELS.get(parent_def or "")
       or (f"unknown setting ({parent_def})" if parent_def else None)
     )
     idx = len(maps)
@@ -311,13 +368,14 @@ def _index_maps_and_pawns(
     ))
     map_elements.append(map_el)
     map_kinds.append(map_kind)
+    map_tiles.append(parent_tile)
     for thing in map_el.iter("thing"):
       if thing.attrib.get("Class") != "Pawn":
         continue
       pid = thing.findtext("id")
       if pid:
         pawn_to_map[pid] = idx
-  return maps, map_elements, map_kinds, pawn_to_map
+  return maps, map_elements, map_kinds, map_tiles, pawn_to_map
 
 
 def _index_caravans(root: etree._Element) -> dict[str, CaravanInfo]:
@@ -361,9 +419,10 @@ def load_save(path: str | Path) -> Save:
   tick = _current_tick(root)
   hour = hour_for_tick(tick) if tick else None
   period = time_period_for_hour(hour) if hour is not None else None
-  maps, map_elements, map_kinds, pawn_to_map = \
+  maps, map_elements, map_kinds, map_tiles, pawn_to_map = \
     _index_maps_and_pawns(root)
   pawn_to_caravan = _index_caravans(root)
+  tile_to_biome = _index_biome_by_tile(root)
   return Save(
     root=root,
     pawns_by_id=_index_pawns(root),
@@ -374,8 +433,10 @@ def load_save(path: str | Path) -> Save:
     maps=maps,
     map_elements=map_elements,
     map_kinds=map_kinds,
+    map_tiles=map_tiles,
     pawn_to_map=pawn_to_map,
     pawn_to_caravan=pawn_to_caravan,
+    tile_to_biome=tile_to_biome,
     time_hour=hour,
     time_period=period,
   )
