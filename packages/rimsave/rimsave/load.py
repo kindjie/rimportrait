@@ -12,6 +12,15 @@ from pathlib import Path
 
 from lxml import etree
 
+from .world import (
+  MapData,
+  decompress_grid_ushorts,
+  hour_for_tick,
+  parse_pos,
+  parse_size,
+  time_period_for_hour,
+)
+
 
 PAWN_ID_PREFIXES = ("Thing_", "")
 
@@ -24,6 +33,10 @@ class Save:
   factions_by_id: dict[str, etree._Element] = field(default_factory=dict)
   player_faction_id: str | None = None
   current_tick: int = 0
+  maps: list[MapData] = field(default_factory=list)
+  pawn_to_map: dict[str, int] = field(default_factory=dict)
+  time_hour: int | None = None
+  time_period: str | None = None
   _things_by_id: dict[str, str] | None = None
 
   def thing_def(self, ref: str) -> str | None:
@@ -47,6 +60,22 @@ class Save:
     if ref.startswith("Thing_"):
       ref = ref[len("Thing_"):]
     return self._things_by_id.get(ref)
+
+  def pawn_outdoor(self, pawn_id: str | None) -> bool | None:
+    """Return True if the pawn is at an unroofed cell, False if
+    roofed, None if their position or map is unknown."""
+    if not pawn_id or not self.maps:
+      return None
+    map_idx = self.pawn_to_map.get(pawn_id)
+    if map_idx is None:
+      return None
+    pawn_el = self.pawns_by_id.get(pawn_id)
+    if pawn_el is None:
+      return None
+    pos = parse_pos(pawn_el.findtext("pos"))
+    if pos is None:
+      return None
+    return self.maps[map_idx].is_outdoor(*pos)
 
 
 def _strip_thing_prefix(ref: str) -> str:
@@ -109,18 +138,68 @@ def _current_tick(root: etree._Element) -> int:
     return 0
 
 
+def _index_maps_and_pawns(
+  root: etree._Element,
+) -> tuple[list[MapData], dict[str, int]]:
+  """Decode each map's roof grid + build a pawn_id -> map index.
+
+  Pawns live inside their map's ``<things>`` container. We walk each
+  map ``<li>`` (those with ``<mapInfo>``), decode its roof grid, and
+  index every pawn under that map.
+  """
+  maps: list[MapData] = []
+  pawn_to_map: dict[str, int] = {}
+  for map_el in root.iter("li"):
+    info = map_el.find("mapInfo")
+    if info is None:
+      continue
+    size = parse_size(info.findtext("size"))
+    if size is None:
+      continue
+    size_x, size_z = size
+    roof_b64 = None
+    roof_el = map_el.find(".//roofGrid/roofsDeflate")
+    if roof_el is not None and roof_el.text:
+      roof_b64 = roof_el.text.strip()
+    if not roof_b64:
+      continue
+    try:
+      roof = decompress_grid_ushorts(roof_b64)
+    except Exception:
+      continue
+    if len(roof) != size_x * size_z:
+      continue
+    idx = len(maps)
+    maps.append(MapData(size_x=size_x, size_z=size_z, roof=roof))
+    for thing in map_el.iter("thing"):
+      if thing.attrib.get("Class") != "Pawn":
+        continue
+      pid = thing.findtext("id")
+      if pid:
+        pawn_to_map[pid] = idx
+  return maps, pawn_to_map
+
+
 def load_save(path: str | Path) -> Save:
   p = Path(path)
   parser = etree.XMLParser(recover=True, huge_tree=True)
   tree = etree.parse(str(p), parser)
   root = tree.getroot()
+  tick = _current_tick(root)
+  hour = hour_for_tick(tick) if tick else None
+  period = time_period_for_hour(hour) if hour is not None else None
+  maps, pawn_to_map = _index_maps_and_pawns(root)
   return Save(
     root=root,
     pawns_by_id=_index_pawns(root),
     ideos_by_id=_index_ideos(root),
     factions_by_id=_index_factions(root),
     player_faction_id=_player_faction_id(root),
-    current_tick=_current_tick(root),
+    current_tick=tick,
+    maps=maps,
+    pawn_to_map=pawn_to_map,
+    time_hour=hour,
+    time_period=period,
   )
 
 

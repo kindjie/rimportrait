@@ -293,9 +293,10 @@ Always overridable:
   Pass `--biome "..."` for now.
 - **Pose/activity is the raw job def** (e.g. `HaulToCell`) — no
   target/verb resolution yet.
-- **Immediate setting (outdoors/indoors + temperature) not yet
-  extracted.** Temperature isn't reliably in the save; outdoor /
-  indoor is recoverable from `roofGrid` but not yet implemented.
+- **Temperature not extracted.** Not reliably in the save.
+  Outdoor/indoor and in-game time of day are now derived from
+  `roofGrid` and `tickManager/ticksGame` respectively. Tile
+  longitude offset is not yet applied to the hour.
 - **Apparel descriptions need a RimWorld install for best results.**
   Without `--rimworld-dir` and without the auto-detect succeeding,
   every field that would have used a mod-aware `description` /

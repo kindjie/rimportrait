@@ -972,11 +972,22 @@ def _style_categories_value(ideo: IdeoRecord) -> str | None:
   return ", ".join(parts)
 
 
+def _time_of_day_value(m: MapContext) -> str | None:
+  if m.time_hour is None and m.time_period is None:
+    return None
+  if m.time_hour is not None and m.time_period is not None:
+    return f"{m.time_period} (hour {m.time_hour:02d})"
+  if m.time_period is not None:
+    return m.time_period
+  return f"hour {m.time_hour:02d}"  # period unset only if hour None
+
+
 def _map_block_lines(m: MapContext | None) -> list[str]:
   if m is None:
     return []
   threat = ", ".join(m.active_threats) if m.active_threats else None
   inner: list[str | None] = [
+    _sub("Time of day", _time_of_day_value(m)),
     _sub("Weather", m.weather),
     _sub("Biome", m.biome),
     _sub("Wealth context", wealth_tier(m.wealth)),
@@ -1062,6 +1073,10 @@ def render_portrait(
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity", p.current_job),
+    _line("Outdoors/indoors",
+          None if p.outdoor is None else
+          ("outdoors (unroofed tile)" if p.outdoor
+           else "indoors (roofed tile)")),
     _line("Immediate setting", p.location),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),
@@ -1135,6 +1150,10 @@ def _person_block(
     _line("Abilities", _abilities_value(p.abilities, def_labels)),
     _line("Psyfocus", _psyfocus_value(p.psyfocus)),
     _line("Pose/activity before portrait", p.current_job),
+    _line("Outdoors/indoors",
+          None if p.outdoor is None else
+          ("outdoors (unroofed tile)" if p.outdoor
+           else "indoors (roofed tile)")),
     _line("Favorite color/accent",
           describe_favorite_color(p.favorite_color)),
     _line("Visible genes/body traits",

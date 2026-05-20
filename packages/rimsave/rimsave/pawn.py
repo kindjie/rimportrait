@@ -748,6 +748,7 @@ def pawn_from_element(
     mood=_mood(el),
     current_job=_current_job(el),
     location=None,
+    outdoor=save.pawn_outdoor(pid),
     hair_def=hair_def,
     hair_label=hair_label_idx or hair_def,
     hair_texture_path=hair_tex_path_idx,
@@ -939,4 +940,6 @@ def map_context_for(
     wealth=wealth_override,
     population=_colonist_count(save),
     active_threats=threats,
+    time_hour=save.time_hour,
+    time_period=save.time_period,
   )

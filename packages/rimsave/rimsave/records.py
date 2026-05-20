@@ -136,6 +136,11 @@ class MapContext:
   wealth: float | None = None
   population: int | None = None
   active_threats: tuple[str, ...] = ()
+  # In-game time of day at the moment the save was written. Hour is
+  # 0-23 in RimWorld's world-UTC (tile longitude not yet applied).
+  # Period is one of dawn/morning/day/golden-hour/dusk/night.
+  time_hour: int | None = None
+  time_period: str | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +162,9 @@ class PawnRecord:
   mood: str | None = None
   current_job: str | None = None
   location: str | None = None
+  # True when the pawn's tile has no roof (outdoor), False when
+  # roofed (indoor), None when the position or map data is missing.
+  outdoor: bool | None = None
   hair_def: str | None = None
   hair_label: str | None = None
   hair_texture_path: str | None = None
