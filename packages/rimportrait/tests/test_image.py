@@ -29,9 +29,51 @@ def test_dispatch_routes_to_google_with_portrait_aspect(monkeypatch):
   assert ext == "png"
   assert calls == [{
     "prompt": "prompt-text",
-    "model": "gemini-3.1-flash-image-preview",
+    "model": "gemini-3-pro-image-preview",  # Nano Banana Pro is default
     "aspect_ratio": "3:4",
   }]
+
+
+def test_dispatch_with_fast_routes_to_google_flash(monkeypatch):
+  calls: list[dict] = []
+
+  def fake_google(prompt, model, *, aspect_ratio):
+    calls.append({"model": model})
+    return (b"\x89PNG-flash", "png")
+
+  monkeypatch.setattr(llm, "google_image", fake_google)
+  llm.generate_image("google", "p", "portrait", fast=True)
+  assert calls == [{"model": "gemini-3.1-flash-image-preview"}]
+
+
+def test_explicit_image_model_beats_fast(monkeypatch):
+  calls: list[dict] = []
+
+  def fake_google(prompt, model, *, aspect_ratio):
+    calls.append({"model": model})
+    return (b"\x89PNG", "png")
+
+  monkeypatch.setattr(llm, "google_image", fake_google)
+  llm.generate_image(
+    "google", "p", "portrait",
+    model="gemini-3-pro-image-preview", fast=True,
+  )
+  # Explicit model wins over --fast.
+  assert calls == [{"model": "gemini-3-pro-image-preview"}]
+
+
+def test_resolve_image_model_picks_per_table():
+  assert llm.resolve_image_model("google") == \
+    "gemini-3-pro-image-preview"
+  assert llm.resolve_image_model("google", fast=True) == \
+    "gemini-3.1-flash-image-preview"
+  assert llm.resolve_image_model("openai") == "gpt-image-2"
+  # Explicit override always wins.
+  assert llm.resolve_image_model("google", "custom-model") == \
+    "custom-model"
+  assert llm.resolve_image_model(
+    "google", "custom-model", fast=True
+  ) == "custom-model"
 
 
 def test_dispatch_routes_to_openai_with_family_size_and_model(monkeypatch):
@@ -81,3 +123,60 @@ def test_missing_google_sdk_raises_with_install_hint(monkeypatch):
 
 def test_default_image_models_cover_all_providers():
   assert set(llm.DEFAULT_IMAGE_MODELS) == set(llm.PROVIDERS)
+
+
+def test_fast_image_models_cover_all_providers():
+  assert set(llm.FAST_IMAGE_MODELS) == set(llm.PROVIDERS)
+
+
+def test_instruction_for_returns_base_when_no_model():
+  from rimportrait.render import (
+    instruction_for,
+    SINGLE_PROMPT_INSTRUCTION,
+    FAMILY_PROMPT_INSTRUCTION,
+    ACTION_PROMPT_INSTRUCTION,
+  )
+  assert instruction_for("portrait") is SINGLE_PROMPT_INSTRUCTION
+  assert instruction_for("family") is FAMILY_PROMPT_INSTRUCTION
+  assert instruction_for("action") is ACTION_PROMPT_INSTRUCTION
+  # Unknown image model -> fall back to base, no overlay appended.
+  assert instruction_for("portrait", image_model="unknown") \
+    is SINGLE_PROMPT_INSTRUCTION
+
+
+def test_instruction_for_appends_model_overlay_when_known():
+  from rimportrait.render import (
+    instruction_for, SINGLE_PROMPT_INSTRUCTION,
+  )
+  out = instruction_for("portrait", image_model="gpt-image-2")
+  assert out.startswith(SINGLE_PROMPT_INSTRUCTION)
+  assert out != SINGLE_PROMPT_INSTRUCTION
+  assert "Additional notes for OpenAI gpt-image-2" in out
+
+  out = instruction_for(
+    "portrait", image_model="gemini-3-pro-image-preview"
+  )
+  assert "Nano Banana Pro" in out
+  assert "POSITIVE reframing" in out
+
+  out = instruction_for(
+    "portrait", image_model="gemini-3.1-flash-image-preview"
+  )
+  assert "Nano Banana 2" in out
+  assert "Flash drops detail aggressively" in out
+
+
+def test_instruction_for_action_with_overlay():
+  from rimportrait.render import (
+    instruction_for, ACTION_PROMPT_INSTRUCTION,
+  )
+  out = instruction_for("action", image_model="gpt-image-2")
+  assert out.startswith(ACTION_PROMPT_INSTRUCTION)
+  assert "Additional notes for OpenAI gpt-image-2" in out
+
+
+def test_instruction_for_unknown_kind_raises():
+  import pytest
+  from rimportrait.render import instruction_for
+  with pytest.raises(ValueError, match="unknown render kind"):
+    instruction_for("still-life")

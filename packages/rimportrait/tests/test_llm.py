@@ -24,7 +24,30 @@ def test_dispatch_routes_to_google(monkeypatch):
   )
   out = llm.complete("google", system="sys", user="usr")
   assert out == "gemini result"
-  assert calls == [("sys", "usr", "gemini-flash-latest")]
+  # Default Google text model is now Pro.
+  assert calls == [("sys", "usr", "gemini-3.1-pro-preview")]
+
+
+def test_dispatch_with_fast_routes_text_to_google_flash(monkeypatch):
+  calls: list[tuple[str, str, str]] = []
+  monkeypatch.setitem(
+    llm._DISPATCH, "google",
+    lambda system, user, model: (
+      calls.append((system, user, model)) or "flash result"
+    ),
+  )
+  llm.complete("google", system="s", user="u", fast=True)
+  assert calls == [("s", "u", "gemini-flash-latest")]
+
+
+def test_resolve_text_model_picks_per_table():
+  assert llm.resolve_text_model("google") == \
+    "gemini-3.1-pro-preview"
+  assert llm.resolve_text_model("google", fast=True) == \
+    "gemini-flash-latest"
+  # Explicit override always wins.
+  assert llm.resolve_text_model("google", "custom-text", fast=True) \
+    == "custom-text"
 
 
 def test_dispatch_routes_to_openai_with_explicit_model(monkeypatch):

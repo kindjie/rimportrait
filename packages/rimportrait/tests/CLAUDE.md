@@ -26,12 +26,15 @@ Render-layer and translate-module tests. Save-extraction tests live in
   (portrait → 1024×1536 / 3:4, family → 1536×1024 / 4:3) +
   missing-SDK error shape. Real provider SDK calls are monkeypatched
   so the suite stays offline-safe.
-- `test_style.py` — `--style`/`--shot`/`--camera`/`--preset` preset
-  resolution + instruction composition. Asserts the Style/
-  Composition/Camera block is appended and that the prescribed
-  "End with" closer is rewritten when `--style` is set (family kind
-  gets "family portrait" descriptor). Override precedence: explicit
-  CLI flags beat preset values.
+- `test_style.py` — `--style`/`--shot`/`--camera`/`--scene`/`--time`/
+  `--preset` resolution + instruction composition. Asserts the
+  Style/Composition/Camera/Scene/Time block is appended and that the
+  prescribed "End with" closer is rewritten only when `--style` is
+  set (family kind gets "family portrait" descriptor). Override
+  precedence: explicit CLI flags beat preset values. Includes a
+  guard asserting the `action` preset names the save-side fields it
+  pulls from (`Pose/activity`, `Inspiration`) so the explicit
+  "lean on save signals" intent doesn't silently rot.
 - `test_render.py` — render layer over hand-built `PawnRecord` /
   `MapContext` fixtures. The `_sample_pawn` fixture acts as the
   canonical end-to-end shape check. Additional cases cover

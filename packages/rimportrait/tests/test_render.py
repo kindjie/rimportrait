@@ -1312,5 +1312,12 @@ def test_family_empty_members_still_emits_envelope():
   out = render_family(focus, [], None, include_instruction=False)
   assert "[FAMILY PORTRAIT SUBJECT]" in out
   assert "Focus pawn: John" in out
-  assert "[PERSON]" not in out
+  # The focus pawn ALWAYS gets a [PERSON] block (the LLM otherwise
+  # under-describes the very subject the portrait centres on).
+  assert "Focus pawn details:" in out
+  assert "[PERSON]" in out
+  assert "Relation to focus pawn: Focus pawn" in out
+  # No family-members section when members are empty.
+  assert "Family/direct relations from focus pawn:" not in out
+  assert "Family members:" not in out
   assert "[/FAMILY PORTRAIT SUBJECT]" in out
