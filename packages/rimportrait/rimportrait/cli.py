@@ -1,9 +1,13 @@
 """Command-line entry point.
 
-Reads a .rws save and emits portrait/family blocks to stdout or to
---out-dir as one file per pawn. Builds a mod-aware def index from the
-save's own <meta><modIds> + <modSteamIds> list so apparel/hair/weapon
-descriptions and texture paths come from the user's actual mod set.
+Reads a .rws save and renders a portrait. With ``--out-dir``, runs the
+full pipeline (block -> LLM-polished prompt -> image). Without it,
+emits the structured block to stdout (cheap default, no API spend).
+``--block-only`` and ``--prompt-only`` stop the pipeline early.
+
+Builds a mod-aware def index from the save's own ``<meta><modIds>`` +
+``<modSteamIds>`` list so apparel/hair/weapon descriptions come from
+the user's actual mod set.
 """
 
 from __future__ import annotations
@@ -13,7 +17,6 @@ import difflib
 import os
 import re
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 from rimsave import (
@@ -27,7 +30,6 @@ from rimsave import (
   index_to_categories,
   index_to_descriptions,
   index_to_labels,
-  iter_by_role,
   iter_colonists,
   iter_pawns,
   load_save,
@@ -47,6 +49,11 @@ _PROVIDER_KEY_VARS: dict[str, tuple[str, ...]] = {
   "google": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
   "openai": ("OPENAI_API_KEY",),
 }
+
+# Mode tokens. Resolved once from CLI flags and threaded through.
+MODE_BLOCK = "block"
+MODE_PROMPT = "prompt"
+MODE_IMAGE = "image"
 
 
 def _slug(s: str) -> str:
@@ -86,21 +93,13 @@ def _error(msg: str) -> str:
   return f"{_red('error:')} {msg}"
 
 
-def _warning(msg: str) -> str:
-  """Format a `warning: <msg>` line for stderr."""
-  return f"{_yellow('warning:')} {msg}"
-
-
 class _RimportraitParser(argparse.ArgumentParser):
   """Argparse parser with a friendlier error path.
 
   Standard argparse prints the (usually wrapped) usage line plus a
-  one-line error and exits 2. That's terse to the point of being
-  unhelpful when the user just ran ``rimportrait`` with no args.
-
-  This subclass keeps the same exit code but appends a hint pointing
-  at ``--help`` and, when the failure is a missing positional, a
-  concrete quick-start invocation.
+  one-line error and exits 2. This subclass keeps the same exit code
+  but appends a hint pointing at ``--help`` and, when the failure is
+  a missing positional, a concrete quick-start invocation.
   """
 
   def error(self, message: str) -> None:  # type: ignore[override]
@@ -112,8 +111,7 @@ class _RimportraitParser(argparse.ArgumentParser):
       sys.stderr.write(_bold("Quick start:") + "\n")
       sys.stderr.write(
         "  " + _cyan(
-          f"{self.prog} colony.rws --pawn NAME --generate "
-          "--image --out-dir out/"
+          f"{self.prog} colony.rws NAME --out-dir out/"
         ) + "\n\n"
       )
     sys.stderr.write(
@@ -155,62 +153,53 @@ def _format_pawn_suggestion(asked: str, names: list[str]) -> str:
 
 
 _DESCRIPTION = """\
-Turn a RimWorld .rws save into AI-image-prompt context blocks.
+Turn a RimWorld .rws save into AI portrait imagery.
 
-Each colonist becomes a [PORTRAIT SUBJECT] block of structured
-render-ready details (hair, gear, ideology, hediffs, gradient hair,
-ApparelDef descriptions from the active mod set, ...). Optionally
-chain through an LLM (--generate) for a polished one-paragraph image
-prompt, and on through an image-gen model (--image) for a PNG/JPEG.
+Default behaviour: emit a structured [PORTRAIT SUBJECT] block to
+stdout (cheap, no API spend). With --out-dir, run the full pipeline
+(block -> LLM-polished prompt -> image) and write both files there.
+--block-only and --prompt-only stop the pipeline early.
 """
 
 _EPILOG = """\
 Examples:
-  # Default - dump a block per colonist to stdout
-  rimportrait colony.rws
+  # Block to stdout (debug / inspection - no API spend)
+  rimportrait colony.rws Stark
 
-  # Block for one pawn (matches label or nickname)
-  rimportrait colony.rws --pawn Stark
+  # Full pipeline: prompt + image written under out/
+  rimportrait colony.rws Stark --out-dir out/
+  # -> out/Stark.portrait.txt    (the LLM-generated prompt)
+  # -> out/Stark.portrait.jpeg   (the image)
 
-  # LLM-polished prompt via Google Gemini (default provider)
-  rimportrait colony.rws --pawn Stark --generate
+  # Family portrait centred on Stark
+  rimportrait colony.rws Stark --family --out-dir out/
 
-  # Prompt + image, both written to out/
-  rimportrait colony.rws --pawn Stark --generate --image --out-dir out/
-  # -> out/Stark.portrait.txt  (the prompt)
-  # -> out/Stark.portrait.jpeg (the image, .png if --provider openai)
+  # All colonists at once (no positional pawn name)
+  rimportrait colony.rws --out-dir out/
 
-  # Family portrait centred on Stark, moody preset
-  rimportrait colony.rws --family Stark --generate --image \\
-    --preset moody-portrait --out-dir out/
+  # Just the prompt (skip image gen)
+  rimportrait colony.rws Stark --prompt-only
 
-  # Override individual style dimensions
-  rimportrait colony.rws --pawn Stark --generate --image --out-dir out/ \\
-    --style "oil painting" --shot "posed three-quarter" \\
-    --scene "candlelit study" --time night
+  # Just the block (skip LLM)
+  rimportrait colony.rws Stark --block-only
 
-  # OpenAI instead of Google
-  rimportrait colony.rws --pawn Stark --generate --provider openai
+  # Style controls
+  rimportrait colony.rws Stark --out-dir out/ --preset renaissance
+  rimportrait colony.rws Stark --out-dir out/ --style "moody candlelit"
 
-  # Manual context the save doesn't serialise
-  rimportrait colony.rws --pawn Stark --wealth 350000 --biome "tropical rainforest"
+  # Model tier / explicit override
+  rimportrait colony.rws Stark --out-dir out/ --model fast
+  rimportrait colony.rws Stark --out-dir out/ \\
+    --provider openai --model gpt-image-2
 
 Environment:
-  GEMINI_API_KEY    Required for --generate / --image when --provider is google
-  OPENAI_API_KEY    Required for --generate / --image when --provider is openai
+  GEMINI_API_KEY    Required when --provider is google (default)
+  OPENAI_API_KEY    Required when --provider is openai
 
-Output behaviour:
-  Without --out-dir, blocks/prompts go to stdout.
-  With --out-dir, one file per pawn lands under it as <slug>.<kind>.txt
-  where <kind> is portrait or family.
-  --image requires --out-dir (binary can't go to stdout) and --generate
-  (image models work best on the polished paragraph, not the raw block).
-
-Optional extras (workspace install — rimportrait is not on PyPI):
+Optional extras (workspace install - rimportrait is not on PyPI):
   uv pip install -e 'packages/rimportrait[google]'   # google-genai (text+image)
   uv pip install -e 'packages/rimportrait[openai]'   # openai (text+image)
   uv pip install -e 'packages/rimportrait[llm]'      # both
-  # or: uv add --dev 'rimportrait[llm]'  to persist in the workspace
 """
 
 
@@ -221,251 +210,126 @@ def _build_parser() -> argparse.ArgumentParser:
     epilog=_EPILOG,
     formatter_class=argparse.RawDescriptionHelpFormatter,
   )
-  p.add_argument("save", type=Path, help="Path to a .rws save file.")
-
-  selection = p.add_argument_group(
-    "selection",
-    "Pick which pawn(s) to render. Default is every colonist.",
+  p.add_argument(
+    "savefile", type=Path,
+    help="Path to a .rws save file.",
   )
-  selection.add_argument(
-    "--pawn", metavar="NAME", default=None,
-    help="Render only the pawn matching this label/nickname.",
+  p.add_argument(
+    "pawn", nargs="?", default=None, metavar="PAWN",
+    help=(
+      "Pawn label / nickname (omit to iterate every colonist). With "
+      "--family, this is the focus pawn the portrait is centred on."
+    ),
   )
-  selection.add_argument(
-    "--family", metavar="FOCUS", default=None,
-    help="Render a family portrait centred on FOCUS.",
-  )
-  selection.add_argument(
-    "--include-prisoners", action="store_true",
-    help="Include prisoners in the default iteration.",
-  )
-  selection.add_argument(
-    "--include-guests", action="store_true",
-    help="Include visitors/guests in the default iteration.",
+  p.add_argument(
+    "--family", action="store_true",
+    help="Render a family portrait centred on PAWN.",
   )
 
-  output = p.add_argument_group(
-    "output",
-    "Where the rendered block (and any image) lands.",
-  )
-  output.add_argument(
+  p.add_argument(
     "--out-dir", type=Path, default=None,
     help=(
-      "Write one file per pawn under this dir (default: stdout). "
-      "Required for --image."
+      "Write outputs here. Presence triggers the full image pipeline "
+      "by default; --block-only / --prompt-only stop earlier."
     ),
   )
-  output.add_argument(
-    "--no-instruction", action="store_true",
-    help=(
-      "Emit only the [PORTRAIT SUBJECT] block, dropping the trailing "
-      "instruction paragraph. Incompatible with --generate."
-    ),
+  mode = p.add_mutually_exclusive_group()
+  mode.add_argument(
+    "--block-only", action="store_true",
+    help="Stop at the rendered block; skip LLM and image (no API calls).",
+  )
+  mode.add_argument(
+    "--prompt-only", action="store_true",
+    help="Run LLM, skip image gen. Writes the prompt only.",
   )
 
-  context = p.add_argument_group(
-    "save context",
-    "Fields RimWorld doesn't serialise plainly or that need overrides.",
-  )
-  context.add_argument(
-    "--wealth", type=float, default=None,
-    help=(
-      "Colony wealth value. RimWorld computes wealth at runtime; pass "
-      "the in-game number to populate the tier line."
-    ),
-  )
-  context.add_argument(
-    "--biome", default=None,
-    help=(
-      "Biome label, e.g. 'temperate forest'. Not stored plainly in "
-      "saves; pass it to populate the line."
-    ),
-  )
-
-  mods = p.add_argument_group(
-    "mod-aware def loading",
-    "Where to find Core + active mods for ApparelDef / HairDef / "
-    "XenotypeDef / HediffDef labels and descriptions. Auto-detects on "
-    "macOS Steam installs.",
-  )
-  mods.add_argument(
-    "--rimworld-dir", type=Path, default=None,
-    help=(
-      "Path to RimWorld's Data directory (contains Core/, Royalty/, "
-      "Ideology/, Biotech/, ...)."
-    ),
-  )
-  mods.add_argument(
-    "--workshop-dir", type=Path, default=None,
-    help=(
-      "Path to Steam Workshop content for RimWorld "
-      "(steamapps/workshop/content/294100)."
-    ),
-  )
-  mods.add_argument(
-    "--mods-dir", type=Path, default=None,
-    help="Path to RimWorld's local Mods directory (sideloaded mods).",
-  )
-  mods.add_argument(
-    "--no-defs", action="store_true",
-    help=(
-      "Skip mod-aware def loading. Labels/descriptions fall back to a "
-      "humanised slug derived from the def name."
-    ),
-  )
-
-  llm_grp = p.add_argument_group(
-    "LLM text step (--generate)",
-    "Pipe the block through an LLM to produce a polished, "
-    "one-paragraph image-generation prompt.",
-  )
-  llm_grp.add_argument(
-    "--generate", action="store_true",
-    help=(
-      "Pipe the block + instruction through an LLM and emit the "
-      "returned paragraph in place of the block."
-    ),
-  )
-  llm_grp.add_argument(
-    "--provider", choices=llm.PROVIDERS, default="openai",
-    help=(
-      "LLM provider for --generate (default: openai). Reads API key "
-      "from OPENAI_API_KEY (openai) or GEMINI_API_KEY (google)."
-    ),
-  )
-  llm_grp.add_argument(
-    "--model", default=None,
-    help=(
-      "Text model override. Defaults: gemini-3.1-pro-preview "
-      "(google) / gpt-4o-mini (openai). Pass --fast to swap in the "
-      "cheaper / faster Google flash variant without typing the "
-      "model name."
-    ),
-  )
-
-  img_grp = p.add_argument_group(
-    "image step (--image)",
-    "After --generate produces the paragraph, feed it to an image-gen "
-    "model and write the resulting PNG/JPEG next to the .txt prompt.",
-  )
-  img_grp.add_argument(
-    "--image", action="store_true",
-    help=(
-      "Render an image from the prompt. Requires --generate and "
-      "--out-dir."
-    ),
-  )
-  img_grp.add_argument(
-    "--image-model", default=None,
-    help=(
-      "Image model override. Defaults: "
-      "gemini-3-pro-image-preview (google, 'Nano Banana Pro'), "
-      "gpt-image-2 (openai). Pass --fast for the cheaper Google "
-      "Flash variant without typing the model name."
-    ),
-  )
-  img_grp.add_argument(
-    "--fast", action="store_true",
-    help=(
-      "Swap BOTH the text model and the image model for the "
-      "provider's fast / cheap variant. Text: "
-      "gemini-flash-latest (google) / gpt-4o-mini (openai - no "
-      "separate fast tier). Image: gemini-3.1-flash-image-preview "
-      "(google) / gpt-image-2 (openai - no separate fast tier). "
-      "Ignored on a step when --model / --image-model is set "
-      "explicitly for that step."
-    ),
-  )
-
-  style_grp = p.add_argument_group(
-    "style / composition / camera",
-    "Steer the LLM toward a target aesthetic by appending a "
-    "Style/Composition/Camera/Scene/Time block to the system "
-    "instruction. All values are free-form except --preset and --time.",
-  )
-  style_grp.add_argument(
+  p.add_argument(
     "--preset", choices=sorted(style.PRESETS.keys()), default=None,
+    metavar="NAME",
     help=(
-      "Named bundle of style+shot+camera. Explicit --style / --shot / "
-      "--camera flags override the preset's values."
+      "Named style bundle (e.g. renaissance, anime). See --help "
+      "for the full list."
     ),
   )
-  style_grp.add_argument(
+  p.add_argument(
     "--style", default=None, metavar="STYLE",
     help=(
-      "Visual style: 'realistic gritty', 'oil painting', 'anime', "
-      "'graphic novel inks', 'propaganda poster', ..."
+      "Freeform style addition (e.g. 'oil painting', "
+      "'moody candlelit'). Overrides --preset's style line."
     ),
   )
-  style_grp.add_argument(
-    "--shot", default=None, metavar="SHOT",
+
+  p.add_argument(
+    "--provider", choices=llm.PROVIDERS, default="openai",
     help=(
-      "Composition / shot type: 'posed three-quarter', 'mid-action', "
-      "'candid', 'environmental wide', ..."
+      "LLM provider (default: openai). Reads API key from "
+      "OPENAI_API_KEY (openai) or GEMINI_API_KEY (google)."
     ),
   )
-  style_grp.add_argument(
-    "--camera", default=None, metavar="CAMERA",
+  p.add_argument(
+    "--model", default=None, metavar="TIER|MODEL_ID",
     help=(
-      "Camera / lens guidance: '85mm portrait, shallow DoF', "
-      "'low-angle wide', 'chiaroscuro lighting', ..."
+      "Model tier ('fast' or 'pro', default 'pro') or an explicit "
+      "model ID. Explicit IDs only override the matching step "
+      "(image IDs contain 'image' / 'imagen' / 'dall-e'); the other "
+      "step uses the pro default."
     ),
   )
-  style_grp.add_argument(
-    "--scene", default=None, metavar="SCENE",
+
+  p.add_argument(
+    "--rimworld-dir", type=Path, default=None, metavar="PATH",
     help=(
-      "Environment / setting hint: 'crowded refugee corridor, smoke', "
-      "'rain-slick alley', 'burning barn at night', ..."
+      "Advanced: override the RimWorld Data directory. Workshop / "
+      "Mods siblings are auto-derived. Auto-detected on macOS Steam."
     ),
   )
-  style_grp.add_argument(
-    "--time",
-    choices=("dawn", "morning", "day", "golden-hour", "dusk", "night"),
-    default=None,
-    help=(
-      "Time-of-day cue. Real-from-save extraction (game ticks -> "
-      "in-game hour) is future work."
-    ),
+  p.add_argument(
+    "--no-defs", action="store_true",
+    help="Advanced: skip mod loading. Labels fall back to humanised slugs.",
   )
   return p
 
 
-def _emit(
+def _resolve_mode(args: argparse.Namespace) -> str:
+  """Pick the rendering mode from flags. Single source of truth."""
+  if args.block_only:
+    return MODE_BLOCK
+  if args.prompt_only:
+    return MODE_PROMPT
+  if args.out_dir is None:
+    # No output dir + no explicit verb -> safe block default.
+    return MODE_BLOCK
+  return MODE_IMAGE
+
+
+def _emit_text(
   out_dir: Path | None,
-  block: str,
+  text: str,
   pawn: PawnRecord,
   kind: str,
 ) -> None:
+  """Write text to stdout (no out-dir) or to a .txt file in out-dir."""
   if out_dir is None:
-    sys.stdout.write(block)
+    sys.stdout.write(text)
     sys.stdout.write("\n\n")
     return
   out_dir.mkdir(parents=True, exist_ok=True)
   fname = f"{_slug(pawn.label or pawn.name_full)}.{kind}.txt"
-  (out_dir / fname).write_text(block + "\n")
-
-
-def _gather_default(
-  save: Save,
-  include_prisoners: bool,
-  include_guests: bool,
-  def_index: dict[str, object] | None,
-  body_parts: dict[str, dict[int, str]] | None,
-) -> list[PawnRecord]:
-  out = list(iter_colonists(save, def_index, body_parts))
-  if include_prisoners:
-    out.extend(iter_by_role(save, "prisoner", def_index, body_parts))
-  if include_guests:
-    out.extend(iter_by_role(save, "guest", def_index, body_parts))
-  return out
+  (out_dir / fname).write_text(text + "\n")
 
 
 def _resolve_paths(args: argparse.Namespace) -> ModPaths:
+  """Auto-detect with a single optional override.
+
+  ``--rimworld-dir`` overrides the Data directory; the corresponding
+  Workshop and Mods siblings are derived from auto-detection (which
+  reads ``libraryfolders.vdf`` to find them).
+  """
   defaults = autodetect_mod_paths()
   return ModPaths(
     rimworld_data=args.rimworld_dir or defaults.rimworld_data,
-    workshop_dir=args.workshop_dir or defaults.workshop_dir,
-    mods_dir=args.mods_dir or defaults.mods_dir,
+    workshop_dir=defaults.workshop_dir,
+    mods_dir=defaults.mods_dir,
   )
 
 
@@ -499,7 +363,7 @@ def _build_index(
   )
   register_def_short_hashes(save, index)
   return (
-    index,  # for extractors (hair_texture_path enrichment)
+    index,
     index_to_descriptions(index),
     index_to_labels(index),
     index_to_categories(index),
@@ -523,37 +387,17 @@ def _build_body_parts(
 
 
 def _context(
-  save: Save, pawn: PawnRecord, args: argparse.Namespace
+  save: Save, pawn: PawnRecord
 ) -> MapContext | None:
-  ctx = map_context_for(save, pawn, wealth_override=args.wealth)
-  if args.biome and ctx is not None:
-    ctx = replace(ctx, biome=args.biome)
-  elif args.biome:
-    ctx = MapContext(biome=args.biome, wealth=args.wealth)
-  return ctx
+  return map_context_for(save, pawn)
 
 
-def _maybe_generate(
+def _llm_polish(
   args: argparse.Namespace, block: str, kind: str
 ) -> str:
-  if not args.generate:
-    return block
-  # When --image is also set, look up which image model will be
-  # called so the LLM can pick the model-tuned overlay. When --image
-  # is off, fall back to the provider-agnostic default base
-  # (the prompt may be consumed by any downstream tool).
-  image_model: str | None = None
-  if args.image:
-    image_model = llm.resolve_image_model(
-      args.provider, args.image_model, args.fast
-    )
-  resolved = style.resolve(
-    args.preset, args.style, args.shot, args.camera,
-    scene=args.scene, time=args.time,
-  )
-  # Preset can swap the base voice (e.g. --preset action -> action
-  # base instead of portrait). Family render always uses family
-  # base regardless of preset.base.
+  """Run the block through the LLM. Caller checks the mode first."""
+  image_model = llm.resolve_model(args.provider, "image", args.model)
+  resolved = style.resolve(args.preset, args.style)
   effective_kind = kind
   if kind == "portrait" and resolved.base:
     effective_kind = resolved.base
@@ -562,19 +406,16 @@ def _maybe_generate(
     kind, resolved,
   )
   return llm.complete(
-    args.provider, system=system, user=block,
-    model=args.model, fast=args.fast,
+    args.provider, system=system, user=block, model=args.model,
   )
 
 
-def _maybe_image(
+def _write_image(
   args: argparse.Namespace, prompt: str, pawn: PawnRecord, kind: str
 ) -> None:
-  if not args.image:
-    return
+  """Generate the image and write it next to the prompt."""
   png, ext = llm.generate_image(
-    args.provider, prompt, kind,
-    model=args.image_model, fast=args.fast,
+    args.provider, prompt, kind, model=args.model,
   )
   out_dir = args.out_dir
   assert out_dir is not None  # validated in main
@@ -583,30 +424,38 @@ def _maybe_image(
   (out_dir / fname).write_bytes(png)
 
 
+def _render_one(
+  args: argparse.Namespace,
+  mode: str,
+  p: PawnRecord,
+  kind: str,
+  block: str,
+) -> None:
+  """Drive the pipeline for a single pawn given a pre-rendered block.
+
+  The block was already rendered by the caller with
+  ``include_instruction`` set appropriately for the mode."""
+  if mode == MODE_BLOCK:
+    _emit_text(args.out_dir, block, p, kind)
+    return
+  prompt = _llm_polish(args, block, kind)
+  _emit_text(args.out_dir, prompt, p, kind)
+  if mode == MODE_IMAGE:
+    _write_image(args, prompt, p, kind)
+
+
 def main(argv: list[str] | None = None) -> int:
   args = _build_parser().parse_args(argv)
-  if args.generate and args.no_instruction:
+  mode = _resolve_mode(args)
+
+  if args.family and not args.pawn:
     print(_error(
-      "--no-instruction and --generate can't both be set. "
-      "--generate replaces the block with an LLM-polished paragraph, "
-      "so the instruction text is consumed as the LLM's system "
-      "prompt rather than appended. Drop one of the two flags."
+      "--family needs a focus pawn. Pass it as the positional "
+      "argument: `rimportrait save.rws NAME --family`."
     ), file=sys.stderr)
     return 2
-  if args.image and not args.generate:
-    print(_error(
-      "--image needs the polished paragraph that --generate "
-      "produces (image models work best on prose, not the raw "
-      "block). Add --generate."
-    ), file=sys.stderr)
-    return 2
-  if args.image and args.out_dir is None:
-    print(_error(
-      "--image writes binary files; add --out-dir <path> to choose "
-      "where they land."
-    ), file=sys.stderr)
-    return 2
-  if args.generate:
+
+  if mode in (MODE_PROMPT, MODE_IMAGE):
     needed = _PROVIDER_KEY_VARS[args.provider]
     if not any(os.environ.get(v) for v in needed):
       pretty = " or ".join(needed)
@@ -616,15 +465,10 @@ def main(argv: list[str] | None = None) -> int:
         + " ".join(f"{v}=..." for v in needed)
       ), file=sys.stderr)
       return 2
-  if (args.style or args.shot or args.camera or args.preset
-      or args.scene or args.time) and not args.generate:
-    print(_warning(
-      "--style/--shot/--camera/--preset/--scene/--time have no "
-      "effect without --generate"
-    ), file=sys.stderr)
-  if not args.save.exists():
+
+  if not args.savefile.exists():
     print(_error(
-      f"save not found: {args.save}\n"
+      f"save not found: {args.savefile}\n"
       "  " + _dim(
         "check the path; RimWorld saves usually live in "
         "~/Library/Application Support/RimWorld by Ludeon Studios/"
@@ -632,38 +476,38 @@ def main(argv: list[str] | None = None) -> int:
       )
     ), file=sys.stderr)
     return 2
-  save = load_save(args.save)
-  # When piping through an LLM, the instruction is the system message
-  # rather than appended to the block, so the rendered block must be
-  # instruction-free.
-  inst = not args.no_instruction and not args.generate
+
+  save = load_save(args.savefile)
+  # The block's trailing instruction text is only useful in
+  # block-only mode (where the user might paste it into a chat UI
+  # manually). For prompt / image modes the instruction is the LLM
+  # system message, so the block stays instruction-free.
+  include_inst = (mode == MODE_BLOCK)
   (def_index, defs_desc, defs_label, defs_cat, defs_cost, defs_tech,
    defs_layer) = _build_index(save, args)
   body_parts = _build_body_parts(args)
 
   try:
     if args.family:
-      focus = find_pawn(save, args.family, def_index, body_parts)
+      focus = find_pawn(save, args.pawn, def_index, body_parts)
       if focus is None:
         names = _list_pawn_names(save, def_index, body_parts)
         print(
-          _error(_format_pawn_suggestion(args.family, names)),
+          _error(_format_pawn_suggestion(args.pawn, names)),
           file=sys.stderr,
         )
         return 4
       members = family_members(save, focus, def_index, body_parts)
       block = render_family(
-        focus, members, _context(save, focus, args),
-        include_instruction=inst,
+        focus, members, _context(save, focus),
+        include_instruction=include_inst,
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
         def_tech_levels=defs_tech,
         def_apparel_layers=defs_layer,
       )
-      text = _maybe_generate(args, block, "family")
-      _emit(args.out_dir, text, focus, "family")
-      _maybe_image(args, text, focus, "family")
+      _render_one(args, mode, focus, "family", block)
       return 0
 
     if args.pawn:
@@ -676,35 +520,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 4
       block = render_portrait(
-        p, _context(save, p, args),
-        include_instruction=inst,
+        p, _context(save, p),
+        include_instruction=include_inst,
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
         def_tech_levels=defs_tech,
         def_apparel_layers=defs_layer,
       )
-      text = _maybe_generate(args, block, "portrait")
-      _emit(args.out_dir, text, p, "portrait")
-      _maybe_image(args, text, p, "portrait")
+      _render_one(args, mode, p, "portrait", block)
       return 0
 
-    for p in _gather_default(
-      save, args.include_prisoners, args.include_guests,
-      def_index, body_parts,
-    ):
+    for p in iter_colonists(save, def_index, body_parts):
       block = render_portrait(
-        p, _context(save, p, args),
-        include_instruction=inst,
+        p, _context(save, p),
+        include_instruction=include_inst,
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
         def_tech_levels=defs_tech,
         def_apparel_layers=defs_layer,
       )
-      text = _maybe_generate(args, block, "portrait")
-      _emit(args.out_dir, text, p, "portrait")
-      _maybe_image(args, text, p, "portrait")
+      _render_one(args, mode, p, "portrait", block)
     return 0
   except Exception as e:
     print(_error(str(e)), file=sys.stderr)

@@ -9,13 +9,13 @@ from rimportrait.style import StylePreset
 
 
 def test_resolve_no_inputs_returns_empty_preset():
-  out = style.resolve(None, None, None, None)
+  out = style.resolve(None, None)
   assert out == StylePreset()
   assert not out.any_set()
 
 
 def test_resolve_preset_only_fills_all_three_dimensions():
-  out = style.resolve("renaissance", None, None, None)
+  out = style.resolve("renaissance", None)
   assert out.style and out.shot and out.camera
   assert "renaissance" in out.style.lower()
   # No accidental "Photorealistic" suppression escape - the painterly
@@ -23,13 +23,13 @@ def test_resolve_preset_only_fills_all_three_dimensions():
   assert "NOT a photograph" in out.style
 
 
-def test_resolve_explicit_overrides_beat_preset():
-  out = style.resolve(
-    "renaissance", style="anime", shot=None, camera=None
-  )
+def test_resolve_style_override_beats_preset():
+  out = style.resolve("renaissance", "anime")
   assert out.style == "anime"
-  # Untouched preset fields survive.
+  # Untouched preset fields survive - only --style overrides; the
+  # preset's shot / camera prose still flows through unchanged.
   assert out.shot is not None and "three-quarter" in out.shot
+  assert out.camera is not None
 
 
 def test_compose_unchanged_when_no_overrides():
@@ -113,29 +113,26 @@ def test_time_alone_appends_time_of_day_line():
   assert "Time of day: dusk." in out
 
 
-def test_resolve_passes_scene_and_time_through():
-  out = style.resolve(
-    None, None, None, None,
-    scene="rain-slick alley", time="night",
-  )
-  assert out.scene == "rain-slick alley"
-  assert out.time == "night"
-  assert out.any_set()
+def test_resolve_preset_scene_and_time_flow_through():
+  """Presets may set ``scene`` / ``time`` (e.g. a future
+  cinematic-night preset). The CLI no longer exposes per-knob
+  overrides, but the preset's pre-set values must still reach the
+  composed instruction."""
+  custom = StylePreset(scene="burning barn", time="golden-hour")
+  # Direct StylePreset path - simulates a hand-authored preset entry.
+  assert custom.scene == "burning barn"
+  assert custom.time == "golden-hour"
+  assert custom.any_set()
 
 
-def test_resolve_combines_preset_with_scene_override():
-  out = style.resolve(
-    "action", None, None, None,
-    scene="burning barn", time="golden-hour",
-  )
-  # Preset's shot/camera survive (action preset has no style; its
-  # base swap is what gives it the cinematic voice).
+def test_resolve_preserves_preset_action_base():
+  """Resolving the ``action`` preset (no --style override) must keep
+  the base-swap signal so the LLM picks the action voice instead of
+  the portrait voice."""
+  out = style.resolve("action", None)
+  assert out.base == "action"
   assert out.shot is not None
   assert out.camera is not None
-  assert out.base == "action"
-  # Overrides take.
-  assert out.scene == "burning barn"
-  assert out.time == "golden-hour"
 
 
 def test_action_preset_uses_action_base():

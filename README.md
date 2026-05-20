@@ -4,14 +4,47 @@
 
 # rimportrait + rimsave
 
-Turn RimWorld colony saves into AI-image-generation prompts — and,
-optionally, finished portraits. Point it at a `.rws` file, pick a
-colonist (or a family), and rimportrait emits a structured
-`[PORTRAIT SUBJECT]` block of every visual detail the save carries.
-Add `--generate` to polish the block into a one-paragraph image
-prompt via Google Gemini or OpenAI; add `--image` to send that
-prompt on through an image model and write the resulting PNG/JPEG
-next to it.
+Turn RimWorld colony saves into finished portraits. Point it at a
+`.rws` file, name a colonist, and rimportrait extracts every visual
+detail the save carries (hair, gear, ideology, hediffs, tattoos,
+mod-aware apparel descriptions) into a structured
+`[PORTRAIT SUBJECT]` block, hands the block to an LLM (Google
+Gemini or OpenAI) for a polished one-paragraph image prompt, and
+sends that prompt on through an image model to write the resulting
+PNG/JPEG next to it. The intermediate block stays available for
+debugging via `--block-only`.
+
+## Gallery
+
+The same pawn (Mila) rendered four ways from the same save —
+default photoreal style plus three preset bundles — followed by a
+family portrait centred on her:
+
+<table>
+<tr>
+<td align="center" width="25%">
+  <img src="docs/samples/mila-default.png" alt="default" /><br>
+  <sub><code>rimportrait save.rws Mila --out-dir out/</code></sub>
+</td>
+<td align="center" width="25%">
+  <img src="docs/samples/mila-renaissance.png" alt="renaissance" /><br>
+  <sub><code>--preset renaissance</code></sub>
+</td>
+<td align="center" width="25%">
+  <img src="docs/samples/mila-anime.png" alt="anime" /><br>
+  <sub><code>--preset anime</code></sub>
+</td>
+<td align="center" width="25%">
+  <img src="docs/samples/mila-propaganda.png" alt="propaganda" /><br>
+  <sub><code>--preset propaganda</code></sub>
+</td>
+</tr>
+</table>
+
+<p align="center">
+  <img src="docs/samples/mila-family.png" alt="family portrait" width="600" /><br>
+  <sub><code>rimportrait save.rws Mila --family --out-dir out/</code></sub>
+</p>
 
 ## Install
 
@@ -37,78 +70,65 @@ API keys for the LLM steps:
 # Default: dump a [PORTRAIT SUBJECT] block per colonist to stdout
 rimportrait colony.rws
 
-# Single pawn block (matches label or nickname)
-rimportrait colony.rws --pawn Cobalt
+# One pawn (positional name matches label or nickname)
+rimportrait colony.rws Cobalt
 
-# Family portrait centred on Cobalt
-rimportrait colony.rws --family Cobalt
-
-# LLM-polished one-paragraph prompt via Google Gemini (default provider)
-rimportrait colony.rws --pawn Cobalt --generate
-
-# Prompt + image, both written to out/
-rimportrait colony.rws --pawn Cobalt --generate --image --out-dir out/
-# -> out/Cobalt.portrait.txt   (the LLM-generated paragraph)
+# Full pipeline: prompt + image, both written to out/
+rimportrait colony.rws Cobalt --out-dir out/
+# -> out/Cobalt.portrait.txt   (the LLM-polished prompt)
 # -> out/Cobalt.portrait.jpeg  (the image; .png if --provider openai)
 
-# Different image model
-rimportrait colony.rws --pawn Cobalt --generate --image --out-dir out/ \
-  --image-model gemini-3-pro-image-preview            # Nano Banana Pro
+# Family portrait centred on Cobalt
+rimportrait colony.rws Cobalt --family --out-dir out/
 
-# OpenAI for both steps
-rimportrait colony.rws --pawn Cobalt --generate --image \
-  --provider openai --out-dir out/
+# Just the prompt (skip image gen)
+rimportrait colony.rws Cobalt --prompt-only
+
+# Just the block (skip LLM and image)
+rimportrait colony.rws Cobalt --block-only
 
 # Steer the aesthetic
-rimportrait colony.rws --pawn Cobalt --generate --image --out-dir out/ \
-  --style "oil painting" --shot "posed three-quarter" \
-  --scene "candlelit study" --time night
+rimportrait colony.rws Cobalt --out-dir out/ --preset renaissance
+rimportrait colony.rws Cobalt --out-dir out/ --style "moody candlelit"
 
-# Or pick a named preset and override individual knobs
-rimportrait colony.rws --pawn Cobalt --generate --image --out-dir out/ \
-  --preset renaissance --time dusk
-
-# Context the save doesn't serialise
-rimportrait colony.rws --pawn Cobalt \
-  --wealth 350000 --biome "tropical rainforest"
-
-# Just the block, no trailing LLM instruction text
-rimportrait colony.rws --pawn Cobalt --no-instruction
+# Model tier (fast for iteration, pro for finals) or explicit override
+rimportrait colony.rws Cobalt --out-dir out/ --model fast
+rimportrait colony.rws Cobalt --out-dir out/ \
+  --provider openai --model gpt-image-2
 ```
 
-Run `rimportrait --help` for the full grouped flag list with
-examples.
+Run `rimportrait --help` for the full flag list.
 
 Defaults the CLI uses:
 
-| Step | Provider default | Model default |
+| Concern | Default | Notes |
 |---|---|---|
-| Text (`--generate`) | `google` | `gemini-flash-latest` (rolling alias) |
-| Text (`--generate --provider openai`) | `openai` | `gpt-4o-mini` |
-| Image (`--image`) | `google` | `gemini-3.1-flash-image-preview` ("Nano Banana 2") |
-| Image (`--image --provider openai`) | `openai` | `gpt-image-2` |
+| Provider | `openai` | Reads `OPENAI_API_KEY`. Switch with `--provider google` (uses `GEMINI_API_KEY` or `GOOGLE_API_KEY`). |
+| Text model (openai) | `gpt-5.5` | `--model fast` swaps to `gpt-4o`. |
+| Image model (openai) | `gpt-image-2` | No separate fast tier on OpenAI. |
+| Text model (google) | `gemini-3.1-pro-preview` | `--model fast` swaps to `gemini-flash-latest`. |
+| Image model (google) | `gemini-3-pro-image-preview` (Nano Banana Pro) | `--model fast` swaps to `gemini-3.1-flash-image-preview` (Nano Banana 2). |
+| Portrait aspect | 3:4 | Single-pawn frame. |
+| Family aspect | 4:3 | Wider frame for groups. |
 
-Image step requires `--generate` and `--out-dir`. Portrait renders
-use a 3:4 frame; family renders use 4:3.
+`--out-dir` triggers the full image pipeline by default. Add
+`--block-only` or `--prompt-only` to stop earlier.
 
 ## Style controls
 
-Five free-form knobs steer the LLM instruction (and therefore the
-text prompt + image). Each splices a labelled line into the
-instruction (`Style: ...`, `Composition: ...`, etc.); `--style`
-additionally rewrites the prescribed closer so the image model sees
-the right aesthetic in the closing tail.
+Two knobs steer the look of the rendered image. `--preset` picks a
+named bundle that sets style, composition, camera, and (where
+applicable) action / scene / time-of-day prose. `--style` is a
+freeform addition that overrides the preset's style line and
+rewrites the prescribed closer so the image model sees the right
+aesthetic in the closing tail.
 
 | Flag | Purpose | Example |
 |---|---|---|
-| `--style` | Visual style | `"oil painting"`, `"anime"`, `"propaganda poster"` |
-| `--shot` | Composition / shot | `"posed three-quarter"`, `"mid-action"`, `"environmental wide"` |
-| `--camera` | Camera / lens | `"85mm portrait, shallow DoF"`, `"low-angle wide"` |
-| `--scene` | Environment hint | `"crowded refugee corridor, smoke"`, `"rain-slick alley"` |
-| `--time` | Time of day | `dawn`, `morning`, `day`, `golden-hour`, `dusk`, `night` |
+| `--preset` | Named bundle | `--preset renaissance` |
+| `--style` | Freeform visual style | `--style "moody candlelit"`, `--style "oil painting"` |
 
-Plus six starter presets (`--preset NAME`) — overrides applied on
-top:
+Starter presets (`--preset NAME`):
 
 | Preset | Vibe |
 |---|---|
@@ -164,37 +184,59 @@ record types live in `rimsave.records`.
 
 ## Rendered fields
 
-A `[PORTRAIT SUBJECT]` block emits the following lines when the
-source data is present (each line is omitted cleanly when empty):
+A `[PORTRAIT SUBJECT]` block is grouped into topic sections; each
+line is omitted cleanly when the source data is empty. Within the
+Apparel section, items are sorted **outer→inner** by silhouette
+layer; every apparel/weapon line carries `[<layer>-layer]` and
+`[<tech>-tech]` tags sourced from the def index, so the LLM has
+authoritative coverage + era data without having to guess from the
+def name.
 
 - **Identity** — Name, Role, Royal title (faction-overridden labels
-  like Empire's *Count → archon* flow through), Race/xenotype,
-  Gender, Age.
-- **Head and face** — hair color/gradient, beard, face/body tattoos
-  resolved to `label (Category style)` via `TattooDef.category`.
-- **State** — Traits, Personality (RimTalk Persona → backstory
-  fallback), Mood, Physical state (Food/Rest/Deathrest below 50 %,
-  with a severe tier below 25 %), Inspiration, Chemical/drug state,
-  Shambler state, Creepjoiner state, Pilot state, Commanded mechs
-  (mech entourage with count×label), Connections (tree/dryad bonds),
-  Bonded animals, Abilities, Psyfocus (band label + %),
-  Pose/activity, Immediate setting.
-- **Aesthetics** — Favorite color/accent, Visible genes/body traits,
-  Visible implants/injuries/body changes (hediff body-part indices
-  resolved to readable labels like *right tibia*, *little toe*).
-- **Gear** — three prominence buckets: **Worn armor/clothing**,
-  **Utility belts/gear** (belts/bandoliers/carriers/gunlinks/jump
-  packs, substring-matched to catch modded variants), **Wielded
-  weapon**. Each item carries stuff (material) + color + ideology
-  style + condition (worn / battered / ruined) qualifiers. Carried
-  infants are surfaced separately, baby carriers are marked `empty`
-  when unused.
-- **Inventory** — Carrying (pack/inventory) summary with stack counts.
-- **Ideology** — Name, primary color, apparel color, description,
-  style aesthetic, memes.
-- **Map context** — biome, wealth tier, location summary.
-- **Apparel detail** — descriptive paragraph per worn item using
-  mod-aware descriptions.
+  like Empire's *Count → archon* are emitted directly, no def-name
+  prefix), Race/xenotype, Gender, Age. The Race/xenotype line
+  appends a `Visible xenogene traits: …` signature built from the
+  pawn's xenogenes (filtered to visible body-mod / pigment /
+  silhouette traits) so the LLM always has a concrete per-pawn
+  visual anchor.
+- **Head and face** — hair style, hair colour (descriptive name),
+  hair gradient (when enabled), beard, beard colour, face / body
+  tattoos resolved to `label (Category style)` via
+  `TattooDef.category`, skin colour, eye colour. Internal asset
+  paths (hair texture, gradient mask def) and RGBA float tuples
+  are intentionally omitted — descriptive colour names only.
+- **Body** — Visible genes/body traits (endogenes only — xenogenes
+  live in the xenotype signature above), Visible implants /
+  injuries / body changes. Both filtered by an externally-visible
+  skip-list; hediffs are also filtered by `body_part` so internal
+  organ implants and small digits (toes, fingers) don't appear.
+- **Apparel** —
+  - **Worn armor/clothing**: torso shell + middle + onskin layers,
+    each with material + colour + condition (worn / battered /
+    ruined) + `[layer]` + `[tech]` tags. Outer items appear first.
+  - **Utility belts/gear**: belts / bandoliers / baby carriers /
+    gunlinks / jump packs, substring-matched to catch modded
+    variants. Baby carriers are marked `empty` when no infant is
+    held.
+  - **Wielded weapon**: with `[tech]` tag.
+  - **Carrying infant in arms**: surfaced separately so the LLM
+    knows what fills the empty carrier.
+  - **Apparel visual descriptions**: one-line "what it is" sentence
+    per worn item (first sentence of the def description; later
+    sentences are gameplay lore and were dropped).
+- **Pose, action, and state** — Pose/activity, Setting,
+  Immediate setting, Favorite color/accent, Traits, Personality
+  (RimTalk Persona → backstory fallback, with the trailing
+  RimTalk voice-stats sentence stripped), Mood, Physical state
+  (Food/Rest/Deathrest below 50 %, severe tier below 25 %),
+  Inspiration, Chemical/drug state, Shambler state, Creepjoiner
+  state, Pilot state, Commanded mechs (count×label), Bonded
+  animals.
+- **Environment** — Ideology name, primary colour, apparel colour,
+  description (truncated to the first sentence), style aesthetic
+  (priority numbers dropped), memes (the `Structure_` category
+  prefix is stripped from the first meme); Colony time of day,
+  weather, biome.
 
 ## Data-first principle
 
@@ -209,11 +251,11 @@ mod description → mod label → humanised def slug
 ```
 
 That means anything moddable (apparel, weapons, hair, genes, hediffs,
-xenotypes, inspirations, abilities, mechs, animals, tattoos, royal
-titles, creepjoiner forms/benefits/downsides/aggressives/rejections,
-inventory items, materials, …) round-trips through the mod-aware def
-index automatically. Adding a new modded def to your game adds it to
-the output with no code changes.
+xenotypes, inspirations, mechs, animals, tattoos, royal titles,
+creepjoiner forms/benefits/downsides/aggressives/rejections,
+materials, …) round-trips through the mod-aware def index
+automatically. Adding a new modded def to your game adds it to the
+output with no code changes.
 
 ## Mod-dependent fields
 
@@ -224,7 +266,7 @@ omitted cleanly when absent.
 |---|---|---|
 | `Hair gradient: ...` | GradientHair | line omitted |
 | `Personality/expression: ...` | RimTalk (its `Hediff_Persona`) | falls back to backstory if the save has readable backstory titles, otherwise omitted |
-| Xenotype description | Biotech + (modded xenotype) | falls back to xenotype label → its defining xenogene list → humanised slug |
+| Xenotype description | Biotech + (modded xenotype) | base text falls back to xenotype label → humanised slug; a per-pawn `Visible xenogene traits: …` signature is always appended when the pawn carries visible xenogenes (works for modded xenotypes with no XML description) |
 
 ## Mod-aware def coverage
 
@@ -285,9 +327,12 @@ Always overridable:
 - **RimWorld 1.5/1.6 save shape only.** Validated against a Biotech
   + Ideology + Royalty + Anomaly + Odyssey save with the GradientHair
   mod. Older versions likely need selector tweaks.
-- **Map wealth isn't serialised by RimWorld** — it's computed at
-  runtime. Pass `--wealth <number>` from the in-game UI to populate
-  the tier line; otherwise the line is omitted.
+- **Map wealth isn't surfaced.** RimWorld doesn't serialise it
+  (computed at runtime) and the wealth-tier line was retired
+  during the token-efficiency pass — it carried weak signal for
+  image generation and the worn-armor materials already imply
+  wealth. `--wealth` still accepts a number for backwards
+  compatibility but is currently a no-op for the rendered block.
 - **Biome is recovered from past tales** (the save's `<tales>` /
   `<surroundings>` records). Works for any colony that has had
   events at its tile - effectively every actively-played colony. For

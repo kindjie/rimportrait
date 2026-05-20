@@ -141,19 +141,23 @@ PRESETS: dict[str, StylePreset] = {
 def resolve(
   preset: str | None,
   style: str | None,
-  shot: str | None,
-  camera: str | None,
-  scene: str | None = None,
-  time: str | None = None,
 ) -> StylePreset:
-  """Merge a preset (if any) with explicit overrides. Overrides win."""
+  """Merge a preset (if any) with the freeform ``--style`` override.
+
+  The preset's pre-set ``shot`` / ``camera`` / ``scene`` / ``time``
+  fields flow through unchanged - presets are richer bundles than
+  the CLI exposes flag-by-flag. The CLI only exposes ``--preset``
+  and ``--style`` so callers express *what aesthetic*, not the
+  granular composition / lens / scene / time knobs (those live in
+  the preset author's hands or are inferred from the rendered
+  block's Setting / Time of day lines)."""
   base = PRESETS[preset] if preset else StylePreset()
   return StylePreset(
     style=style or base.style,
-    shot=shot or base.shot,
-    camera=camera or base.camera,
-    scene=scene or base.scene,
-    time=time or base.time,
+    shot=base.shot,
+    camera=base.camera,
+    scene=base.scene,
+    time=base.time,
     base=base.base,
   )
 

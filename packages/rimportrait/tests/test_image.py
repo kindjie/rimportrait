@@ -34,7 +34,8 @@ def test_dispatch_routes_to_google_with_portrait_aspect(monkeypatch):
   }]
 
 
-def test_dispatch_with_fast_routes_to_google_flash(monkeypatch):
+def test_model_fast_tier_routes_to_google_flash(monkeypatch):
+  """``--model fast`` resolves to the fast image model for Google."""
   calls: list[dict] = []
 
   def fake_google(prompt, model, *, aspect_ratio):
@@ -42,11 +43,12 @@ def test_dispatch_with_fast_routes_to_google_flash(monkeypatch):
     return (b"\x89PNG-flash", "png")
 
   monkeypatch.setattr(llm, "google_image", fake_google)
-  llm.generate_image("google", "p", "portrait", fast=True)
+  llm.generate_image("google", "p", "portrait", model="fast")
   assert calls == [{"model": "gemini-3.1-flash-image-preview"}]
 
 
-def test_explicit_image_model_beats_fast(monkeypatch):
+def test_explicit_image_model_id_used_for_image_step(monkeypatch):
+  """An image-shaped --model ID is honoured for the image step."""
   calls: list[dict] = []
 
   def fake_google(prompt, model, *, aspect_ratio):
@@ -55,25 +57,38 @@ def test_explicit_image_model_beats_fast(monkeypatch):
 
   monkeypatch.setattr(llm, "google_image", fake_google)
   llm.generate_image(
-    "google", "p", "portrait",
-    model="gemini-3-pro-image-preview", fast=True,
+    "google", "p", "portrait", model="gemini-3-pro-image-preview",
   )
-  # Explicit model wins over --fast.
   assert calls == [{"model": "gemini-3-pro-image-preview"}]
 
 
-def test_resolve_image_model_picks_per_table():
-  assert llm.resolve_image_model("google") == \
+def test_resolve_image_model_picks_per_tier():
+  assert llm.resolve_model("google", "image", None) == \
     "gemini-3-pro-image-preview"
-  assert llm.resolve_image_model("google", fast=True) == \
+  assert llm.resolve_model("google", "image", "pro") == \
+    "gemini-3-pro-image-preview"
+  assert llm.resolve_model("google", "image", "fast") == \
     "gemini-3.1-flash-image-preview"
-  assert llm.resolve_image_model("openai") == "gpt-image-2"
-  # Explicit override always wins.
-  assert llm.resolve_image_model("google", "custom-model") == \
-    "custom-model"
-  assert llm.resolve_image_model(
-    "google", "custom-model", fast=True
-  ) == "custom-model"
+  assert llm.resolve_model("openai", "image", None) == "gpt-image-2"
+  # Explicit image-shaped ID wins for the image step.
+  assert llm.resolve_model("google", "image", "custom-image-x") \
+    == "custom-image-x"
+
+
+def test_text_shaped_id_falls_back_to_pro_for_image_step():
+  """A text-shaped --model only overrides text; the image step
+  falls back to the pro image default."""
+  assert llm.resolve_model("openai", "image", "gpt-4o-mini") \
+    == "gpt-image-2"
+
+
+def test_is_image_model_id_heuristic():
+  assert llm.is_image_model_id("gemini-3-pro-image-preview")
+  assert llm.is_image_model_id("gpt-image-2")
+  assert llm.is_image_model_id("dall-e-3")
+  assert llm.is_image_model_id("imagen-3")
+  assert not llm.is_image_model_id("gemini-3.1-pro-preview")
+  assert not llm.is_image_model_id("gpt-4o-mini")
 
 
 def test_dispatch_routes_to_openai_with_family_size_and_model(monkeypatch):
@@ -110,23 +125,17 @@ def test_unknown_kind_raises_valueerror():
 
 def test_missing_openai_sdk_raises_with_install_hint(monkeypatch):
   monkeypatch.setitem(sys.modules, "openai", None)
-  with pytest.raises(RuntimeError, match=r"pip install .*openai"):
+  with pytest.raises(RuntimeError, match=r"openai package not installed"):
     llm.openai_image("p", "gpt-image-2", size="1024x1536")
 
 
 def test_missing_google_sdk_raises_with_install_hint(monkeypatch):
   monkeypatch.setitem(sys.modules, "google.genai", None)
-  with pytest.raises(RuntimeError, match=r"pip install .*google"):
+  with pytest.raises(
+    RuntimeError, match=r"google-genai package not installed"
+  ):
     llm.google_image("p", "gemini-3.1-flash-image-preview",
                      aspect_ratio="3:4")
-
-
-def test_default_image_models_cover_all_providers():
-  assert set(llm.DEFAULT_IMAGE_MODELS) == set(llm.PROVIDERS)
-
-
-def test_fast_image_models_cover_all_providers():
-  assert set(llm.FAST_IMAGE_MODELS) == set(llm.PROVIDERS)
 
 
 def test_instruction_for_returns_base_when_no_model():
