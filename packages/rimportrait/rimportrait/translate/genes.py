@@ -61,13 +61,31 @@ def _is_ignored(def_name: str) -> bool:
   return any(p in def_name for p in _IGNORED_PATTERNS)
 
 
+def is_visible_gene_def(def_name: str) -> bool:
+  """Public predicate: True when a gene def name carries a visible
+  body-mod / pigment / silhouette signal (and is NOT in the
+  skip-list of internal / metabolic / aptitude genes). Used by the
+  xenotype renderer to emit a per-pawn visible-xenogene signature."""
+  return not _is_ignored(def_name)
+
+
 def describe_genes(
   genes: Iterable[Gene],
   labels: dict[str, str] | None = None,
+  endogenes_only: bool = False,
 ) -> list[str]:
+  """List humanised gene labels, filtered by the visibility skip-list.
+
+  When ``endogenes_only=True`` xenogenes are excluded; used by the
+  Body section so it doesn't duplicate the xenogene signature now
+  surfaced on the ``Race/xenotype`` line. Endogenes (the pawn's
+  inherited baseline traits) stay because they still convey
+  silhouette / pigment cues independent of the xenotype."""
   out: list[str] = []
   for g in genes:
     if _is_ignored(g.def_name):
+      continue
+    if endogenes_only and g.is_xenogene:
       continue
     out.append(g.label or label_for(g.def_name, labels))
   return out

@@ -304,12 +304,22 @@ obscured.
 6. The paragraph is a single block: no JSON, no bullets, no \
 "Subject:" / "Style:" labels, no multiple alternative options, \
 no headings.
-7. Hair is described structurally - length, parting, volume, \
+7. Every face feature present in the Head and face section of \
+the block appears in the paragraph and is described visually. \
+This includes: hair (always, when present), beard / facial hair \
+(when present - never omit; describe shape, length, coverage, and \
+colour), face tattoo (when present - describe shape, placement, \
+style), body tattoo (when present and visible on neck/arms/chest \
+in the chosen framing), skin color (when present - skin tone), \
+eye color (when present), and any other Head-and-face line. \
+Missing the beard, face tattoo, or any other listed face feature \
+is a failure - rewrite to add it.
+8. Hair is described structurally - length, parting, volume, \
 direction, texture, colour transition - within the first third of \
 the paragraph. Not just the hair def name.
-8. The portrait is anchored on one grounded RimWorld action \
+9. The portrait is anchored on one grounded RimWorld action \
 translated visually, not a static or generic pose.
-9. The closing phrase is exactly: "realistic gritty RimWorld \
+10. The closing phrase is exactly: "realistic gritty RimWorld \
 sci-fi colony portrait, grounded expression, no UI." with no \
 extra words after it."""
 
@@ -1274,7 +1284,9 @@ def render_portrait(
   # Body.
   body = [s for s in (
     _sub("Visible genes/body traits",
-         ", ".join(describe_genes(p.genes, def_labels)) or None),
+         ", ".join(describe_genes(
+           p.genes, def_labels, endogenes_only=True,
+         )) or None),
     _sub("Visible implants/injuries/body changes",
          ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
   ) if s]
@@ -1383,7 +1395,9 @@ def _person_block(
   # Body.
   body = [s for s in (
     _sub("Visible genes/body traits",
-         ", ".join(describe_genes(p.genes, def_labels)) or None),
+         ", ".join(describe_genes(
+           p.genes, def_labels, endogenes_only=True,
+         )) or None),
     _sub("Visible implants/injuries/body changes",
          ", ".join(describe_hediffs(p.hediffs, def_labels)) or None),
   ) if s]

@@ -9,53 +9,63 @@ def test_none_xenotype_returns_none():
   assert describe_xenotype("") is None
 
 
-def test_description_wins_over_label_and_gene_fallback():
+def test_description_wins_then_signature_is_appended():
+  """Description provides the lore-level text; the per-pawn visible
+  xenogene signature is appended on top so the LLM gets a concrete
+  visual anchor even when the description leads with lore."""
   out = describe_xenotype(
     "Sanguophage",
     descriptions={"Sanguophage": "ageless predatory transhuman"},
     labels={"Sanguophage": "vampire"},
     genes=(Gene("Fangs", is_xenogene=True),),
   )
-  assert out == "ageless predatory transhuman"
+  assert out == (
+    "ageless predatory transhuman Visible xenogene traits: fangs."
+  )
 
 
-def test_label_used_when_no_description():
+def test_label_used_when_no_description_with_signature():
   out = describe_xenotype(
     "Sanguophage",
     labels={"Sanguophage": "vampire"},
     genes=(Gene("Fangs", is_xenogene=True),),
   )
-  assert out == "vampire"
+  assert out == "vampire Visible xenogene traits: fangs."
 
 
-def test_gene_list_fallback_uses_xenogenes_only():
+def test_signature_includes_visible_xenogenes_only():
+  """Only xenogenes that pass the visibility filter appear in the
+  signature; endogenes (the pawn's baseline) and skip-listed
+  mechanical genes are dropped. With no description threaded, the
+  signature stands on its own (no duplicated humanised slug)."""
   out = describe_xenotype(
     "Sanguophage",
     genes=(
       Gene("Fangs", is_xenogene=True),
-      Gene("Bloodfeeder", is_xenogene=True),
-      Gene("Hair_DarkBlack", is_xenogene=False),
-      Gene("Body_Standard", is_xenogene=False),
+      Gene("Bloodfeeder", is_xenogene=True),  # mechanical, filtered
+      Gene("Hair_DarkBlack", is_xenogene=False),  # endogene
+      Gene("Body_Standard", is_xenogene=False),  # endogene
     ),
   )
-  assert out == "fangs, bloodfeeder"
+  assert out == "Visible xenogene traits: fangs."
 
 
-def test_gene_list_fallback_threads_labels():
+def test_signature_threads_mod_labels():
   out = describe_xenotype(
     "Sanguophage",
-    labels={"Bloodfeeder": "blood-feeder"},
+    labels={"Fangs": "razor fangs"},
     genes=(
       Gene("Fangs", is_xenogene=True),
-      Gene("Bloodfeeder", is_xenogene=True),
     ),
   )
-  assert out == "fangs, blood-feeder"
+  # Sanguophage has a label entry (an empty one not provided), so
+  # we fall through to the signature-only form.
+  assert out == "Visible xenogene traits: razor fangs."
 
 
 def test_baseliner_with_no_xenogenes_falls_back_to_humanised_slug():
-  # Baseliner pawns carry only endogenes; the xenogene-list fallback
-  # returns nothing, so the helper falls through to humanise(name).
+  # Baseliner pawns carry only endogenes; no signature suffix is
+  # appended because there are no xenogenes to surface.
   out = describe_xenotype(
     "Baseliner",
     genes=(

@@ -1288,7 +1288,11 @@ def test_multiple_royal_titles_render_semicolon_joined():
   )
 
 
-def test_xenotype_falls_back_to_xenogene_list_when_no_description():
+def test_xenotype_appends_visible_xenogene_signature():
+  """With no description threaded, the xenotype line still appends
+  a 'Visible xenogene traits:' signature from the pawn's visible
+  xenogenes. Bloodfeeder is filtered (in the genes skip-list);
+  endogenes (Hair_DarkBlack) are excluded; only Fangs survives."""
   pawn = PawnRecord(
     pawn_id="14c",
     name_full="Vam Pyre",
@@ -1302,9 +1306,10 @@ def test_xenotype_falls_back_to_xenogene_list_when_no_description():
     ),
   )
   out = render_portrait(pawn, None, include_instruction=False)
-  # No descriptions/labels threaded -> gene-list fallback engages and
-  # enumerates xenogenes only; the endogene is excluded.
-  assert "Race/xenotype: Sanguophage - fangs, bloodfeeder" in out
+  assert (
+    "Race/xenotype: Sanguophage - Visible xenogene traits: fangs."
+    in out
+  )
 
 
 def test_family_empty_members_still_emits_envelope():
