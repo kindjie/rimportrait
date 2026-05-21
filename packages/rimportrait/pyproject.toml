@@ -16,6 +16,9 @@ dependencies = [
   "keyring>=24",
   "Pillow>=10",
   "platformdirs>=4",
+  # Renames the OS process from "python3" to "rimportrait" so
+  # Activity Monitor / `ps` / Dock identifies the GUI correctly.
+  "setproctitle>=1.3",
 ]
 
 [project.optional-dependencies]

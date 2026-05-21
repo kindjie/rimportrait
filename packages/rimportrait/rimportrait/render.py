@@ -138,6 +138,25 @@ Examples:
 - Sanguophage -> pale archotech-altered immortal human, slight \
 fangs, unnaturally flawless skin, predatory stillness, blood-drinker \
 undertone.
+- Yttakin (or any furred xenotype / Furskin gene) -> the entire \
+body is covered head-to-toe in a plush medium-to-long DOUBLE \
+COAT of fur with visible length and weight (think Samoyed, Husky, \
+Golden Retriever, Border Collie — not a short-haired breed, not \
+bare skin). The 'Skin color' field in the block describes the \
+FUR colour (not a visible skin tone underneath); write it as \
+'a thick tan double coat with longer guard hairs across the \
+shoulders' or 'dense black fur, medium length, slightly tufted \
+at the cheeks and forearms', NOT as '[colour] skin' and NOT as a \
+shaved short pelt. 'Hairstyle: Bald' for a furred xenotype \
+just means no separate scalp hair on top of the fur — it does \
+NOT mean visible bald skin; the head is still fully fur-covered. \
+Any listed face/body tattoos must be re-expressed as marks the \
+fur itself can carry: shaved-into-fur patterns (negative-space \
+designs where the fur is cut short), dyed fur in contrasting \
+colour, or raised scarification visible through the coat — NOT \
+inked-on-skin tattoos, since the skin isn't visible. Animal-like \
+ears or muzzle shape may be implied; eyes and a humanoid \
+silhouette remain.
 - Prestige cataphract armor -> ornate futuristic powered armor with \
 bulky sealed plasteel plates, gold trim, servo-assisted joints, \
 psychic-thread detailing, high-status military finish.

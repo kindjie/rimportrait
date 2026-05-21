@@ -15,7 +15,7 @@ a = Analysis(
     str(project_root / 'packages/rimsave'),
   ],
   binaries=[],
-  datas=[],
+  datas=[('docs/logo.png', 'docs')],
   hiddenimports=[
     'rimsave', 'rimportrait',
     'keyring.backends.Windows',

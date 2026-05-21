@@ -173,6 +173,21 @@ def _keychain_set(provider: str, value: str) -> tuple[bool, str]:
     return (False, f"{type(e).__name__}: {e}")
 
 
+def _logo_path() -> Path | None:
+  """Locate the logo image.
+
+  Dev runs find it via the repo path; PyInstaller bundles ship it
+  next to the executable under a `docs/` data dir (see the spec).
+  """
+  here = Path(__file__).resolve()
+  # Walk up looking for docs/logo.png next to a workspace ancestor.
+  for parent in (here.parent, *here.parents):
+    candidate = parent / "docs" / "logo.png"
+    if candidate.is_file():
+      return candidate
+  return None
+
+
 def _list_saves(saves_dir: Path) -> list[SaveEntry]:
   if not saves_dir.is_dir():
     return []
@@ -365,6 +380,7 @@ class App:
 
     root.title(f"{APP_NAME}  —  RimWorld portrait generator")
     root.geometry("780x900")
+    self._apply_window_icon()
 
     self._build_layout()
     self._populate_saves()
@@ -386,11 +402,55 @@ class App:
     container = sf.inner
     container.columnconfigure(0, weight=1)
 
+    self._build_header(container)
     self._build_account(container)
     self._build_card1(container)
     self._build_card2(container)
     self._build_card3(container)
     self._build_log_footer(container)
+
+  def _apply_window_icon(self) -> None:
+    """Set the OS window/dock icon from docs/logo.png if present.
+
+    Pillow does the PNG load; tk.PhotoImage natively only handles
+    GIF/PNG on newer Tk but Pillow's ImageTk normalises across
+    builds. The reference is kept on self so the image isn't
+    garbage-collected and blanked."""
+    path = _logo_path()
+    if path is None:
+      return
+    try:
+      from PIL import Image, ImageTk
+      img = Image.open(path)
+      self._icon_imgref = ImageTk.PhotoImage(img)
+      self.root.iconphoto(True, self._icon_imgref)
+    except Exception:
+      pass
+
+  def _build_header(self, parent) -> None:
+    """Logo + title row above the Account section."""
+    path = _logo_path()
+    if path is None:
+      return
+    try:
+      from PIL import Image, ImageTk
+      img = Image.open(path)
+      img.thumbnail((72, 72))
+      self._header_imgref = ImageTk.PhotoImage(img)
+    except Exception:
+      return
+    bar = ttk.Frame(parent, padding=(10, 10, 10, 0))
+    bar.pack(fill="x")
+    ttk.Label(bar, image=self._header_imgref).pack(side="left")
+    title = ttk.Frame(bar)
+    title.pack(side="left", padx=(10, 0), anchor="w")
+    ttk.Label(
+      title, text=APP_NAME, font=("TkDefaultFont", 16, "bold"),
+    ).pack(anchor="w")
+    ttk.Label(
+      title, text="Turn a RimWorld save into an AI portrait.",
+      foreground="#888",
+    ).pack(anchor="w")
 
   # ----- Account & model -----------------------------------------
 
@@ -792,15 +852,21 @@ class App:
 
     def work():
       try:
+        cli.reset_clock()
+        cli._status(f"Loading save", f"({save_path.name})")
         save = load_save(save_path)
         ns = argparse.Namespace(no_defs=False, rimworld_dir=None)
+        cli._status("Building mod-aware def index")
         (idx, dd, dl, dc, dco, dt, dla) = cli._build_index(save, ns)
         if idx is not None:
-          # cli._build_index already calls register_def_short_hashes,
-          # but only when paths exist; keep both paths consistent.
-          pass
+          cli._status("Def index ready", f"({len(idx)} defs)")
+        else:
+          cli._status("No mod folder — falling back to slug labels")
+        cli._status("Parsing body-part index")
         bp = cli._build_body_parts(ns)
+        cli._status("Listing pawns")
         names = cli._list_pawn_names(save, idx, bp)
+        cli._status(f"Found {len(names)} pawns")
       except Exception:
         self.progress_q.put("!card1-error!" + traceback.format_exc())
         return
@@ -924,8 +990,17 @@ class App:
 
     def work():
       try:
+        cli.reset_clock()
+        text_model = llm.resolve_model(provider, "text", tier)
+        cli._status(
+          f"Calling LLM ({provider} {text_model})",
+          f"system={len(system):,} chars  user={len(block):,} chars",
+        )
         out = llm.complete(
           provider, system=system, user=block, model=tier,
+        )
+        cli._status(
+          f"LLM returned {len(out):,} chars",
         )
       except Exception:
         self.progress_q.put("!card2-error!" + traceback.format_exc())
@@ -1012,16 +1087,51 @@ class App:
 
     def work():
       try:
+        cli.reset_clock()
+        image_model = llm.resolve_model(provider, "image", tier)
+        quality = llm.image_quality_for(provider, tier) or "—"
+        cli._status(
+          f"Calling image API ({provider} {image_model})",
+          f"prompt={len(prompt):,} chars  tier={tier}  q={quality}",
+        )
         png, ext = llm.generate_image(
           provider, prompt, kind, model=tier,
         )
+        cli._status(f"Got {len(png):,} bytes of {ext}")
       except Exception:
         self.progress_q.put("!card3-error!" + traceback.format_exc())
         return
-      fname = f"{_slug(pawn_name)}.{kind}.{ext}"
-      out_path = out_dir / fname
+      stem = _slug(pawn_name)
+      image_path = out_dir / f"{stem}.{kind}.{ext}"
+      prompt_path = out_dir / f"{stem}.{kind}.txt"
       try:
-        out_path.write_bytes(png)
+        # Preserve previous run(s) by moving the existing image
+        # AND its paired prompt into a `history/` subfolder under
+        # a shared timestamp. Pairing is by filename: the image
+        # and its prompt always share the same `<stem>.<kind>.<stamp>`
+        # prefix, so you can find which prompt produced which
+        # image months later.
+        if image_path.exists() or prompt_path.exists():
+          history_dir = out_dir / "history"
+          history_dir.mkdir(parents=True, exist_ok=True)
+          # Use the image's mtime (or the prompt's, if no image)
+          # so both archived files share the timestamp.
+          src = image_path if image_path.exists() else prompt_path
+          stamp = time.strftime(
+            "%Y-%m-%dT%H%M%S", time.localtime(src.stat().st_mtime),
+          )
+          if image_path.exists():
+            arch_img = history_dir / f"{stem}.{kind}.{stamp}.{ext}"
+            image_path.rename(arch_img)
+            cli._status(f"Archived previous image -> {arch_img.name}")
+          if prompt_path.exists():
+            arch_txt = history_dir / f"{stem}.{kind}.{stamp}.txt"
+            prompt_path.rename(arch_txt)
+            cli._status(f"Archived previous prompt -> {arch_txt.name}")
+        image_path.write_bytes(png)
+        prompt_path.write_text(prompt + "\n")
+        cli._status(f"Wrote {image_path.name} + {prompt_path.name}")
+        out_path = image_path
       except OSError:
         self.progress_q.put("!card3-error!" + traceback.format_exc())
         return
@@ -1223,6 +1333,14 @@ class App:
 
 
 def main() -> int:
+  # Rename the OS process so Activity Monitor / `ps` / Dock show
+  # "rimportrait" instead of "python3". Silent no-op on the off
+  # chance setproctitle isn't available (fresh-install edge).
+  try:
+    import setproctitle
+    setproctitle.setproctitle("rimportrait")
+  except Exception:
+    pass
   root = tk.Tk()
   App(root)
   root.mainloop()
