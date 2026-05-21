@@ -81,7 +81,7 @@ once, click Generate.
 
 | OS | Download | First-launch |
 |---|---|---|
-| macOS | `rimportrait-macos.zip` → unzip → drag `rimportrait.app` to `/Applications` | Right-click the app → **Open** → confirm in the Gatekeeper dialog. (Apple needs this once for unsigned apps; double-click works after that.) |
+| macOS | `rimportrait-macos.zip` → unzip → drag `rimportrait.app` to `/Applications` | Double-click the app — macOS will say it can't be opened. Open **System Settings → Privacy & Security**, scroll to the **`"rimportrait.app" was blocked`** line, click **Open Anyway**, then click **Open Anyway** again in the confirmation dialog. One-time. |
 | Windows | `rimportrait.exe` | Double-click → "Windows protected your PC" appears → click **More info** → **Run anyway**. (Microsoft SmartScreen requires this once for unsigned apps.) |
 
 The bundle is unsigned for v1, so you'll see those warnings the
@@ -89,6 +89,21 @@ first time. The app autodetects your RimWorld saves folder, lists
 your saves with the most recent first, and stores the API key in
 your OS keychain (macOS Keychain / Windows Credential Manager) so
 you only enter it once.
+
+**macOS first-launch screenshots:**
+
+<table>
+<tr>
+<td align="center" width="50%">
+  <img src="docs/macos_system_settings.png" alt="System Settings → Privacy & Security with the Open Anyway button" /><br>
+  <sub>1. System Settings → Privacy &amp; Security → <b>Open Anyway</b></sub>
+</td>
+<td align="center" width="50%">
+  <img src="docs/macos_confirm.png" alt="Open Anyway confirmation dialog" /><br>
+  <sub>2. Confirm <b>Open Anyway</b> in the dialog</sub>
+</td>
+</tr>
+</table>
 
 To get an API key: sign in at
 [platform.openai.com](https://platform.openai.com/) (or
