@@ -173,19 +173,27 @@ def _keychain_set(provider: str, value: str) -> tuple[bool, str]:
     return (False, f"{type(e).__name__}: {e}")
 
 
-def _logo_path() -> Path | None:
-  """Locate the logo image.
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
-  Dev runs find it via the repo path; PyInstaller bundles ship it
-  next to the executable under a `docs/` data dir (see the spec).
-  """
-  here = Path(__file__).resolve()
-  # Walk up looking for docs/logo.png next to a workspace ancestor.
-  for parent in (here.parent, *here.parents):
-    candidate = parent / "docs" / "logo.png"
-    if candidate.is_file():
-      return candidate
-  return None
+
+def _asset_path(name: str) -> Path | None:
+  """Resolve a packaged asset by name.
+
+  Assets ship inside the package (``rimportrait/assets/``) so they
+  travel with the wheel and are picked up by PyInstaller via the
+  package collector — no per-bundle `datas=` entry needed."""
+  p = _ASSETS_DIR / name
+  return p if p.is_file() else None
+
+
+def _logo_path() -> Path | None:
+  """Wordmark image for the GUI header (wider-than-tall)."""
+  return _asset_path("logo.png")
+
+
+def _icon_path() -> Path | None:
+  """Square icon image for window / dock badge."""
+  return _asset_path("icon.png") or _logo_path()
 
 
 def _list_saves(saves_dir: Path) -> list[SaveEntry]:
@@ -378,7 +386,7 @@ class App:
     self.active_stage: str | None = None  # "card1" | "card2" | "card3"
     self._t_start: float = 0.0
 
-    root.title(f"{APP_NAME}  —  RimWorld portrait generator")
+    root.title("RimPortrait")
     root.geometry("780x900")
     self._apply_window_icon()
 
@@ -416,7 +424,7 @@ class App:
     GIF/PNG on newer Tk but Pillow's ImageTk normalises across
     builds. The reference is kept on self so the image isn't
     garbage-collected and blanked."""
-    path = _logo_path()
+    path = _icon_path()
     if path is None:
       return
     try:
@@ -428,29 +436,33 @@ class App:
       pass
 
   def _build_header(self, parent) -> None:
-    """Logo + title row above the Account section."""
+    """Centered logo + tagline above the Account section.
+
+    The logo carries the "RimPortrait" wordmark; the tagline is
+    the one piece of context the brand mark itself doesn't convey."""
     path = _logo_path()
     if path is None:
       return
     try:
       from PIL import Image, ImageTk
-      img = Image.open(path)
-      img.thumbnail((72, 72))
+      img = Image.open(path).convert("RGBA")
+      img.thumbnail((160, 160))
       self._header_imgref = ImageTk.PhotoImage(img)
     except Exception:
       return
-    bar = ttk.Frame(parent, padding=(10, 10, 10, 0))
+    # Use tk.Label (not ttk.Label) for both rows here — on macOS
+    # the themed widget pads its content vertically, leaving a
+    # large gap between the badge and the tagline that ipady=0
+    # can't override. tk.Label respects ipady=0 cleanly.
+    bar = ttk.Frame(parent, padding=(10, 8, 10, 0))
     bar.pack(fill="x")
-    ttk.Label(bar, image=self._header_imgref).pack(side="left")
-    title = ttk.Frame(bar)
-    title.pack(side="left", padx=(10, 0), anchor="w")
-    ttk.Label(
-      title, text=APP_NAME, font=("TkDefaultFont", 16, "bold"),
-    ).pack(anchor="w")
-    ttk.Label(
-      title, text="Turn a RimWorld save into an AI portrait.",
-      foreground="#888",
-    ).pack(anchor="w")
+    tk.Label(
+      bar, image=self._header_imgref, borderwidth=0, highlightthickness=0,
+    ).pack(pady=0, ipady=0)
+    tk.Label(
+      bar, text="Turn a RimWorld save into an AI portrait.",
+      foreground="#888", borderwidth=0, highlightthickness=0,
+    ).pack(pady=(2, 0), ipady=0)
 
   # ----- Account & model -----------------------------------------
 

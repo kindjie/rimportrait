@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" alt="rimportrait" width="240">
+  <img src="packages/rimportrait/rimportrait/assets/logo.png" alt="rimportrait" width="240">
 </p>
 
 # rimportrait + rimsave
