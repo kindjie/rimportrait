@@ -9,6 +9,11 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# softprops/action-gh-release needs write access to create the
+# Release + upload assets; default GITHUB_TOKEN is read-only.
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -56,10 +61,14 @@ jobs:
           name: rimportrait-windows
           path: dist/rimportrait.exe
 
-      - name: Attach to Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Attach to Release (macOS)
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/rimportrait-macos.zip
-            dist/rimportrait.exe
+          files: dist/rimportrait-macos.zip
+
+      - name: Attach to Release (Windows)
+        if: matrix.os == 'windows-latest' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/rimportrait.exe

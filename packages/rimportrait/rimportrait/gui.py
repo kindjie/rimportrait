@@ -149,12 +149,22 @@ def _save_config(cfg: dict) -> None:
   _config_path().write_text(json.dumps(cfg, indent=2))
 
 
+# Per-process cache for keychain reads. Each macOS keychain read
+# on an unsigned binary triggers a "Allow … to access your keychain"
+# prompt; we never need to re-read within a session, so cache.
+_KEYCHAIN_CACHE: dict[str, str] = {}
+
+
 def _keychain_get(provider: str) -> str:
+  if provider in _KEYCHAIN_CACHE:
+    return _KEYCHAIN_CACHE[provider]
   try:
     import keyring
-    return keyring.get_password(KEYRING_SERVICE, provider) or ""
+    val = keyring.get_password(KEYRING_SERVICE, provider) or ""
   except Exception:
-    return ""
+    val = ""
+  _KEYCHAIN_CACHE[provider] = val
+  return val
 
 
 def _keychain_set(provider: str, value: str) -> tuple[bool, str]:
@@ -168,6 +178,7 @@ def _keychain_set(provider: str, value: str) -> tuple[bool, str]:
                     "[gui] extra)")
   try:
     keyring.set_password(KEYRING_SERVICE, provider, value)
+    _KEYCHAIN_CACHE[provider] = value  # keep cache in sync
     return (True, "")
   except Exception as e:
     return (False, f"{type(e).__name__}: {e}")
@@ -392,8 +403,11 @@ class App:
 
     self._build_layout()
     self._populate_saves()
-    self._prefill_key()
-    self._on_provider_change()  # decide whether to open Account
+    # Single keychain read at startup. _on_provider_change handles
+    # both prefill and the "Account auto-opens if key missing"
+    # decision; calling _prefill_key separately doubled the macOS
+    # keychain-permission prompt on unsigned builds.
+    self._on_provider_change()
     # React to provider/tier flips with a fresh model-label render.
     self.provider_var.trace_add("write", self._refresh_model_labels)
     self.tier_var.trace_add("write", self._refresh_model_labels)
