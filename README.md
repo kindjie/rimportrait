@@ -14,6 +14,27 @@ sends that prompt on through an image model to write the resulting
 PNG/JPEG next to it. The intermediate block stays available for
 debugging via `--block-only`.
 
+## Two ways to use it
+
+<table>
+<tr>
+<td align="center" width="50%">
+  <a href="https://github.com/kindjie/rimportrait/releases">
+    <img src="docs/rimportrait_gui.png" alt="GUI preview" />
+  </a><br>
+  <b><a href="https://github.com/kindjie/rimportrait/releases">Download the app →</a></b><br>
+  <sub>One-click GUI for macOS &amp; Windows. No Python required.</sub>
+</td>
+<td align="center" width="50%">
+  <a href="#usage">
+    <img src="docs/rimportrait_cli.png" alt="CLI preview" />
+  </a><br>
+  <b><a href="#usage">Use the CLI →</a></b><br>
+  <sub>Scriptable, pipe-friendly, batch a whole colony.</sub>
+</td>
+</tr>
+</table>
+
 ## Gallery
 
 The same pawn (Mila) rendered four ways from the same save —
