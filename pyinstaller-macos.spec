@@ -10,7 +10,7 @@ block_cipher = None
 project_root = Path.cwd()
 
 a = Analysis(
-  ['packages/rimportrait/rimportrait/gui.py'],
+  ['scripts/run_gui.py'],
   pathex=[
     str(project_root / 'packages/rimportrait'),
     str(project_root / 'packages/rimsave'),
