@@ -21,6 +21,16 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # Hoisted to the job so `if:` gates can read `env.X != ''`.
+    # GitHub Actions disallows `secrets.X` in `if:` expressions, so
+    # we route signing-related secrets through `env` and key off
+    # the visibility of the cert blob.
+    env:
+      APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,9 +49,67 @@ jobs:
 
       - name: Build (macOS)
         if: matrix.os == 'macos-latest'
+        run: pyinstaller pyinstaller-macos.spec
+
+      # ---------------------------------------------------------------
+      # macOS signing + notarization (Developer ID)
+      #
+      # Skipped automatically until the APPLE_CERT_P12_BASE64 secret is
+      # configured. To enable:
+      #
+      # 1. Enroll: https://developer.apple.com/programs/enroll/   ($99/yr)
+      # 2. Generate a "Developer ID Application" certificate, install
+      #    it into your login Keychain, then export it as a .p12 with
+      #    a password.
+      # 3. Create an app-specific password at appleid.apple.com (for
+      #    notarytool).
+      # 4. Add five repo secrets:
+      #      APPLE_CERT_P12_BASE64   `base64 -i cert.p12`
+      #      APPLE_CERT_PASSWORD     export password from step 2
+      #      APPLE_ID                your developer-program email
+      #      APPLE_TEAM_ID           10-char Team ID
+      #      APPLE_APP_PASSWORD      app-specific password from step 3
+      # 5. (Optional) Set codesign_identity in pyinstaller-macos.spec
+      #    to your "Developer ID Application: …" string so PyInstaller
+      #    pre-signs the bootloader.
+      #
+      # Once those secrets exist the steps below run automatically; the
+      # final zip ships a notarized + stapled .app that opens with no
+      # Gatekeeper friction.
+      # ---------------------------------------------------------------
+      - name: Import Apple signing certificate (macOS, if configured)
+        if: matrix.os == 'macos-latest' && env.APPLE_CERT_P12_BASE64 != ''
         run: |
-          pyinstaller pyinstaller-macos.spec
-          cd dist && zip -r rimportrait-macos.zip rimportrait.app
+          echo "$APPLE_CERT_P12_BASE64" | base64 -d > /tmp/cert.p12
+          KEYCHAIN_PW=$(openssl rand -hex 16)
+          security create-keychain -p "$KEYCHAIN_PW" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PW" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security import /tmp/cert.p12 -k build.keychain \
+            -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PW" build.keychain
+          rm /tmp/cert.p12
+
+      - name: Sign + notarize + staple .app (macOS, if configured)
+        if: matrix.os == 'macos-latest' && env.APPLE_CERT_P12_BASE64 != ''
+        run: |
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain \
+            | grep "Developer ID Application" | head -1 \
+            | awk -F'"' '{print $2}')
+          echo "Signing with: $IDENTITY"
+          codesign --deep --force --options runtime --timestamp \
+            --sign "$IDENTITY" dist/rimportrait.app
+          ditto -c -k --keepParent dist/rimportrait.app /tmp/notarize.zip
+          xcrun notarytool submit /tmp/notarize.zip \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple dist/rimportrait.app
+
+      - name: Package macOS zip
+        if: matrix.os == 'macos-latest'
+        run: cd dist && zip -r rimportrait-macos.zip rimportrait.app
 
       - name: Build (Windows)
         if: matrix.os == 'windows-latest'
