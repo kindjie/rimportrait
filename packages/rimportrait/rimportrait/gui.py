@@ -459,6 +459,12 @@ class App:
     self.progress_q: queue.Queue[str] = queue.Queue()
     self.active_stage: str | None = None  # "card1" | "card2" | "card3"
     self._t_start: float = 0.0
+    # Remember the API-key field text per provider so toggling the
+    # radio doesn't *appear* to wipe the OpenAI key when we switch
+    # to Google (and back). The actual keychain entries are
+    # provider-scoped and untouched; this just stabilises the UI.
+    self._field_per_provider: dict[str, str] = {}
+    self._last_provider: str | None = None
 
     root.title("RimPortrait")
     root.geometry("780x900")
@@ -1237,14 +1243,18 @@ class App:
 
   def _on_provider_change(self) -> None:
     """Update key-field UI on provider toggle without touching the
-    keychain. Clears any key field carried over from the previous
-    provider (different providers have different keys) and
-    refreshes the visibility of the 'Load saved key' button based
-    on whether we've previously persisted a key for this provider."""
-    self.key_var.set("")
+    keychain. Saves whatever the user had in the field for the
+    previous provider so toggling back restores it; restores the
+    field from per-provider memory for the new one. Different
+    providers have different keychain entries — this just stabilises
+    the visible field."""
+    if self._last_provider is not None:
+      self._field_per_provider[self._last_provider] = self.key_var.get()
+    provider = self.provider_var.get()
+    self.key_var.set(self._field_per_provider.get(provider, ""))
+    self._last_provider = provider
     self._refresh_load_key_btn()
     # Auto-open Account on first run / when there's nothing to load.
-    provider = self.provider_var.get()
     if provider not in self.cfg.get("saved_key_providers", []):
       self.account.open()
 
@@ -1273,6 +1283,7 @@ class App:
       key = _keychain_get(provider)
       if key:
         self.key_var.set(key)
+        self._field_per_provider[provider] = key
         self._append_log(f"Loaded saved {provider} key from keychain.")
         return key
     self.account.open()
@@ -1286,9 +1297,11 @@ class App:
   def _load_saved_key(self) -> None:
     """Read the keychain on explicit user click. This is the only
     code path that hits the keychain for reads."""
-    val = _keychain_get(self.provider_var.get())
+    provider = self.provider_var.get()
+    val = _keychain_get(provider)
     if val:
       self.key_var.set(val)
+      self._field_per_provider[provider] = val
       self._append_log("Loaded saved API key from keychain.")
     else:
       messagebox.showinfo(
@@ -1306,6 +1319,7 @@ class App:
     provider = self.provider_var.get()
     ok, err = _keychain_set(provider, self.key_var.get())
     if ok:
+      self._field_per_provider[provider] = self.key_var.get()
       self._append_log("Saved API key to keychain.")
       # Track which providers have a stored key so we can enable
       # "Load saved key" on future launches without hitting the
