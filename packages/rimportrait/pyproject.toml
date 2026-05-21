@@ -9,9 +9,11 @@ dependencies = ["lxml>=5.0", "rimsave"]
 openai = ["openai>=1.40"]
 google = ["google-genai>=0.5"]
 llm = ["openai>=1.40", "google-genai>=0.5"]
+gui = ["keyring>=24", "Pillow>=10", "platformdirs>=4"]
 
 [project.scripts]
 rimportrait = "rimportrait.cli:main"
+rimportrait-gui = "rimportrait.gui:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -46,7 +46,30 @@ family portrait centred on her:
   <sub><code>rimportrait save.rws Mila --family --out-dir out/</code></sub>
 </p>
 
-## Install
+## Download the app (no Python required)
+
+Pre-built desktop bundles ship from the
+[Releases page](https://github.com/kindjie/rimportrait/releases) for
+macOS and Windows. No Python, no terminal — drop the API key in
+once, click Generate.
+
+| OS | Download | First-launch |
+|---|---|---|
+| macOS | `rimportrait-macos.zip` → unzip → drag `rimportrait.app` to `/Applications` | Right-click the app → **Open** → confirm in the Gatekeeper dialog. (Apple needs this once for unsigned apps; double-click works after that.) |
+| Windows | `rimportrait.exe` | Double-click → "Windows protected your PC" appears → click **More info** → **Run anyway**. (Microsoft SmartScreen requires this once for unsigned apps.) |
+
+The bundle is unsigned for v1, so you'll see those warnings the
+first time. The app autodetects your RimWorld saves folder, lists
+your saves with the most recent first, and stores the API key in
+your OS keychain (macOS Keychain / Windows Credential Manager) so
+you only enter it once.
+
+To get an API key: sign in at
+[platform.openai.com](https://platform.openai.com/) (or
+[aistudio.google.com](https://aistudio.google.com/) for Gemini),
+generate a key, paste it into the app, click "Save to keychain".
+
+## Install (developer / Python)
 
 Python 3.11+ and [`uv`](https://docs.astral.sh/uv/):
 
@@ -55,6 +78,7 @@ uv sync                                          # both packages, editable
 uv pip install -e 'packages/rimportrait[google]' # Google SDK
 uv pip install -e 'packages/rimportrait[openai]' # OpenAI SDK
 uv pip install -e 'packages/rimportrait[llm]'    # both
+uv pip install -e 'packages/rimportrait[gui]'    # Tk GUI (rimportrait-gui)
 ```
 
 API keys for the LLM steps:

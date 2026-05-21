@@ -24,3 +24,12 @@ build/
 
 # Generated portrait/family output
 out/
+
+# macOS Finder metadata
+.DS_Store
+
+# pyenv local version pin
+.python-version
+
+# Local sample bundle
+docs/samples.zip

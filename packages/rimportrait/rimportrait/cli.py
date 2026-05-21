@@ -103,8 +103,32 @@ _T0: float = 0.0
 _QUIET: bool = False
 
 
+def _default_status_sink(line: str) -> None:
+  sys.stderr.write(line + "\n")
+  sys.stderr.flush()
+
+
+# Swappable so the GUI can capture progress lines into a queue.
+# Set via set_status_sink(); restore with set_status_sink(None).
+_STATUS_SINK = _default_status_sink
+
+
+def set_status_sink(sink):
+  """Install a status-line consumer. Pass None to restore stderr."""
+  global _STATUS_SINK
+  _STATUS_SINK = sink if sink is not None else _default_status_sink
+
+
+def reset_clock() -> None:
+  """Reset the elapsed-seconds clock used by _status. The GUI calls
+  this at the start of each Generate run so the log restarts at 0s."""
+  import time
+  global _T0
+  _T0 = time.monotonic()
+
+
 def _status(msg: str, suffix: str | None = None) -> None:
-  """Print a progress line to stderr: ``[Xs] msg [suffix]``.
+  """Emit a progress line ``[Xs] msg [suffix]`` to the status sink.
 
   Suffix (when given) is dimmed; useful for incidental detail
   like a mod count or model id. Silently no-ops when ``_QUIET`` is
@@ -115,10 +139,9 @@ def _status(msg: str, suffix: str | None = None) -> None:
   elapsed = time.monotonic() - _T0
   stamp = _dim(f"[{elapsed:5.1f}s]")
   if suffix:
-    sys.stderr.write(f"{stamp} {msg} {_dim(suffix)}\n")
+    _STATUS_SINK(f"{stamp} {msg} {_dim(suffix)}")
   else:
-    sys.stderr.write(f"{stamp} {msg}\n")
-  sys.stderr.flush()
+    _STATUS_SINK(f"{stamp} {msg}")
 
 
 class _RimportraitParser(argparse.ArgumentParser):
@@ -521,10 +544,17 @@ def _render_one(
 
 
 def main(argv: list[str] | None = None) -> int:
-  import time
-  global _T0
-  _T0 = time.monotonic()
+  reset_clock()
   args = _build_parser().parse_args(argv)
+  return main_with_args(args)
+
+
+def main_with_args(args: argparse.Namespace) -> int:
+  """Run the pipeline against a pre-built Namespace.
+
+  Public entry point for the GUI (and any other caller that wants
+  to skip the argparse layer). The CLI ``main()`` just parses argv
+  and delegates here, so all flag combinations go through one path."""
   mode = _resolve_mode(args)
   # Progress lines are useful when the pipeline does real work
   # (LLM and/or image gen). For the cheap block-only-to-stdout

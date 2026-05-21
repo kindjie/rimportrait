@@ -1,0 +1,65 @@
+name: release
+
+# Builds desktop bundles on tag push and uploads them to the
+# corresponding GitHub Release. Unsigned for v1 — users follow the
+# Gatekeeper/SmartScreen bypass documented in the README.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install project + GUI extras + LLM SDKs
+        run: |
+          uv pip install --system -e packages/rimsave
+          uv pip install --system -e 'packages/rimportrait[gui,llm]'
+          uv pip install --system pyinstaller>=6.0
+
+      - name: Build (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          pyinstaller pyinstaller-macos.spec
+          cd dist && zip -r rimportrait-macos.zip rimportrait.app
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: pyinstaller pyinstaller-windows.spec
+
+      - name: Upload macOS artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rimportrait-macos
+          path: dist/rimportrait-macos.zip
+
+      - name: Upload Windows artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rimportrait-windows
+          path: dist/rimportrait.exe
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/rimportrait-macos.zip
+            dist/rimportrait.exe

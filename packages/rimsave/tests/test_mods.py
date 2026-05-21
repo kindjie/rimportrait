@@ -18,6 +18,7 @@ from rimsave.mods import (
   _parse_raw_defs,
   _probe_rimworld_paths,
   _resolve_inheritance,
+  autodetect_saves_dir,
   build_def_index_from_save,
   iter_mods_from_save,
   resolve_mod_roots,
@@ -424,3 +425,18 @@ def test_strip_format_tags_in_description(tmp_path: Path):
   assert "<color" not in desc
   assert "Worship Caullux." in desc
   assert "\n\n" in desc
+
+
+def test_autodetect_saves_dir_returns_existing(tmp_path: Path, monkeypatch):
+  """Picks the first existing platform-default Saves dir under HOME."""
+  fake_home = tmp_path / "home"
+  saves = (fake_home / "Library/Application Support"
+           / "RimWorld by Ludeon Studios/Saves")
+  saves.mkdir(parents=True)
+  monkeypatch.setattr(Path, "home", lambda: fake_home)
+  assert autodetect_saves_dir() == saves
+
+
+def test_autodetect_saves_dir_none_when_missing(tmp_path: Path, monkeypatch):
+  monkeypatch.setattr(Path, "home", lambda: tmp_path / "empty-home")
+  assert autodetect_saves_dir() is None

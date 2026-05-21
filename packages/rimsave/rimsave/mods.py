@@ -215,6 +215,56 @@ def _probe_rimworld_paths(steam_root: Path) -> ModPaths | None:
   )
 
 
+def installed_rimworld_version(paths: ModPaths) -> str | None:
+  """Read ``Version.txt`` from the detected RimWorld install.
+
+  ``rimworld_data`` points at ``.../RimWorld(Mac.app)/Data``; the
+  version file sits one level up. Returns the raw string (e.g.
+  ``"1.6.4633 rev1266"``) or None if the install isn't located or
+  the file is missing."""
+  if paths.rimworld_data is None:
+    return None
+  for candidate in (
+    paths.rimworld_data.parent / "Version.txt",
+    paths.rimworld_data / "Version.txt",
+  ):
+    if candidate.is_file():
+      try:
+        return candidate.read_text(encoding="utf-8").strip() or None
+      except OSError:
+        return None
+  return None
+
+
+def autodetect_saves_dir() -> Path | None:
+  """Return the first existing platform-default RimWorld Saves dir.
+
+  Saves live outside Steam at fixed per-OS user-data paths:
+  macOS uses ``~/Library/Application Support``, Windows uses
+  ``%USERPROFILE%/AppData/LocalLow``, Linux uses
+  ``~/.config/unity3d``. Returns ``None`` if none exist (uncommon
+  Steam install layouts, fresh install with no saves yet, etc.) so
+  the caller can prompt for a manual path.
+  """
+  home = Path.home()
+  # macOS RimWorld settled on plain "RimWorld/" (older builds used
+  # "RimWorld by Ludeon Studios/"); Windows + Linux use the long
+  # name. Probe both macOS variants so we pick up either install.
+  candidates = [
+    home / "Library/Application Support/RimWorld/Saves",
+    home / "Library/Application Support"
+         / "RimWorld by Ludeon Studios/Saves",
+    home / "AppData/LocalLow/Ludeon Studios"
+         / "RimWorld by Ludeon Studios/Saves",
+    home / ".config/unity3d/Ludeon Studios"
+         / "RimWorld by Ludeon Studios/Saves",
+  ]
+  for c in candidates:
+    if c.is_dir():
+      return c
+  return None
+
+
 def autodetect_mod_paths() -> ModPaths:
   """Find the first Steam install on this machine that contains RimWorld.
 

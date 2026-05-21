@@ -27,6 +27,35 @@ from .world import (
 )
 
 
+def read_save_game_version(path: Path) -> str | None:
+  """Return the save's ``<meta><gameVersion>`` without a full parse.
+
+  Uses iterparse + early termination so listing dozens of saves in a
+  GUI stays cheap (the dropdown reads this for every .rws on
+  startup; a full lxml tree per save would block the window for
+  seconds on large colonies)."""
+  try:
+    ctx = etree.iterparse(
+      str(path), events=("end",),
+      huge_tree=True, recover=True,
+    )
+  except (OSError, etree.XMLSyntaxError):
+    return None
+  try:
+    for _, elem in ctx:
+      if elem.tag == "gameVersion":
+        return (elem.text or "").strip() or None
+      # gameVersion is the first child of <meta>; bail at </meta>
+      # so we don't walk the whole save when it's missing.
+      if elem.tag == "meta":
+        return None
+  except etree.XMLSyntaxError:
+    return None
+  finally:
+    del ctx
+  return None
+
+
 # WorldObject def -> coarse human label for the colony's setting.
 _MAP_KIND_LABELS: dict[str, str] = {
   "Settlement": "terrestrial settlement",
