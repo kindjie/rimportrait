@@ -46,6 +46,11 @@ family portrait centred on her:
   <sub><code>rimportrait save.rws Mila --family --out-dir out/</code></sub>
 </p>
 
+<p align="center">
+  <img src="docs/samples/kidhesk-action.png" alt="action still" width="400" /><br>
+  <sub><code>rimportrait save.rws Kidhesk --preset action --out-dir out/</code></sub>
+</p>
+
 ## Download the app (no Python required)
 
 Pre-built desktop bundles ship from the
