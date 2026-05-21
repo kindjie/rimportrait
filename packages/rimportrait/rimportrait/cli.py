@@ -39,7 +39,7 @@ from rimsave import (
 from rimsave.records import MapContext, PawnRecord
 
 from . import llm, style
-from .render import instruction_for, render_family, render_portrait
+from .render import render_family, render_portrait
 
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -408,19 +408,20 @@ def _context(
 def _composed_instruction(
   args: argparse.Namespace, kind: str
 ) -> str:
-  """Build the LLM system instruction: base (portrait / family /
-  action) + per-image-model overlay + --preset / --style addendum.
+  """Build the LLM system instruction: kind's core + style section +
+  per-image-model overlay.
 
-  This is the text the LLM would actually receive (or the text
-  appended to stdout when --with-instruction is set)."""
+  ``style.compose_instruction`` owns the assembly path now; this
+  function is just the CLI argument adapter."""
   image_model = llm.resolve_model(args.provider, "image", args.model)
-  resolved = style.resolve(args.preset, args.style)
+  preset = style.PRESETS.get(args.preset) if args.preset else None
   effective_kind = kind
-  if kind == "portrait" and resolved.base:
-    effective_kind = resolved.base
+  if kind == "portrait" and preset is not None and preset.base:
+    effective_kind = preset.base
   return style.compose_instruction(
-    instruction_for(effective_kind, image_model=image_model),
-    kind, resolved,
+    kind, preset,
+    image_model=image_model, effective_kind=effective_kind,
+    user_style=args.style,
   )
 
 

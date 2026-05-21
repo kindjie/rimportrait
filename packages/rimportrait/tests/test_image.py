@@ -138,29 +138,28 @@ def test_missing_google_sdk_raises_with_install_hint(monkeypatch):
                      aspect_ratio="3:4")
 
 
-def test_instruction_for_returns_base_when_no_model():
-  from rimportrait.render import (
-    instruction_for,
-    SINGLE_PROMPT_INSTRUCTION,
-    FAMILY_PROMPT_INSTRUCTION,
-    ACTION_PROMPT_INSTRUCTION,
+def test_instruction_for_returns_assembled_base_when_no_model():
+  """``instruction_for`` now assembles the kind's core with the
+  default section (no overlay when image_model is None or
+  unknown)."""
+  from rimportrait.render import instruction_for
+  for kind in ("portrait", "family", "action"):
+    out = instruction_for(kind)
+    assert "Always avoid (style-independent):" in out
+    # No model overlay when no image_model.
+    assert "Additional notes for" not in out
+  # Unknown image model -> no overlay either.
+  assert "Additional notes for" not in instruction_for(
+    "portrait", image_model="unknown"
   )
-  assert instruction_for("portrait") is SINGLE_PROMPT_INSTRUCTION
-  assert instruction_for("family") is FAMILY_PROMPT_INSTRUCTION
-  assert instruction_for("action") is ACTION_PROMPT_INSTRUCTION
-  # Unknown image model -> fall back to base, no overlay appended.
-  assert instruction_for("portrait", image_model="unknown") \
-    is SINGLE_PROMPT_INSTRUCTION
 
 
 def test_instruction_for_appends_model_overlay_when_known():
-  from rimportrait.render import (
-    instruction_for, SINGLE_PROMPT_INSTRUCTION,
-  )
+  from rimportrait.render import instruction_for
   out = instruction_for("portrait", image_model="gpt-image-2")
-  assert out.startswith(SINGLE_PROMPT_INSTRUCTION)
-  assert out != SINGLE_PROMPT_INSTRUCTION
   assert "Additional notes for OpenAI gpt-image-2" in out
+  # Default mode trigger is "Photorealistic".
+  assert "Lead the paragraph with \"Photorealistic\"" in out
 
   out = instruction_for(
     "portrait", image_model="gemini-3-pro-image-preview"
@@ -176,12 +175,33 @@ def test_instruction_for_appends_model_overlay_when_known():
 
 
 def test_instruction_for_action_with_overlay():
-  from rimportrait.render import (
-    instruction_for, ACTION_PROMPT_INSTRUCTION,
-  )
+  from rimportrait.render import instruction_for
   out = instruction_for("action", image_model="gpt-image-2")
-  assert out.startswith(ACTION_PROMPT_INSTRUCTION)
+  assert "RimWorld sci-fi colony action still, no UI." in out
   assert "Additional notes for OpenAI gpt-image-2" in out
+
+
+def test_instruction_for_section_swaps_mode_trigger_and_closer():
+  """When a StyleSection is passed, the kind's core renders with
+  the section's closer + prose, and the overlay receives the
+  section's mode trigger."""
+  from rimportrait.render import instruction_for
+  from rimportrait.style import StyleSection
+  custom = StyleSection(
+    prose="Style:\nTest style prose.",
+    mode_trigger="A test trigger",
+    closer_phrase="test closer phrase, no UI.",
+  )
+  out = instruction_for(
+    "portrait", image_model="gpt-image-2", section=custom,
+  )
+  # Closer is spliced in both Output-format and validation item 10.
+  assert 'End with: "test closer phrase, no UI."' in out
+  assert 'closing phrase is exactly: "test closer phrase, no UI."' in out
+  # Section prose lands in the body.
+  assert "Test style prose." in out
+  # Overlay's leading-verb rule uses the section's mode trigger.
+  assert "Lead the paragraph with \"A test trigger\"" in out
 
 
 def test_instruction_for_unknown_kind_raises():

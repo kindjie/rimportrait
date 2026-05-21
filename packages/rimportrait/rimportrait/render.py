@@ -8,7 +8,7 @@ tight for downstream LLM consumption.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from rimsave.colors import rgba_to_name
 from rimsave.records import (
@@ -44,6 +44,7 @@ from .translate.hediffs import (
 )
 from .translate.weapons import describe_weapon, qualifier_for_weapon
 from .translate.xenotype import describe_xenotype
+from .style import StyleSection
 
 
 # --- shared instruction fragments ------------------------------------
@@ -113,13 +114,13 @@ Output format:
 - No labels like "Subject:" or "Style:".
 - Do not generate multiple options.
 - Do not include the pawn's name.
-- End with: "realistic gritty RimWorld sci-fi colony portrait, \
-grounded expression, no UI."
+- End with: "{closer_phrase}"
 
 Core goal:
-Create a believable portrait of a real colonist, not a poster, \
-character sheet, fashion shoot, game screenshot, trading card, or \
-generic concept-art lineup.
+Create a single coherent portrait image of the subject, in the \
+style described below.
+
+{style_section_prose}
 
 Opening:
 Start with "Portrait of a [age]-year-old [role/identity]..." using \
@@ -248,20 +249,9 @@ cues should appear as restrained visual influence, not explicit \
 exposition or symbols unless the source names a specific visible \
 object.
 
-Style:
-Use realistic cinematic portrait language: natural proportions, \
-believable skin texture, subtle asymmetry, practical materials, \
-worn surfaces, dust, scratches, sweat, grime, lived-in clothing, \
-restrained color grading, shallow depth of field, realistic lens \
-feel, soft side light or motivated practical light.
-
-Avoid:
-Blank expression, glamour retouching, exaggerated beauty, static \
-passport-photo pose, centered character-sheet framing, superhero \
-poster composition, fantasy knight armor, glossy fantasy armor, \
-anime, cartoon, chibi, plastic-looking 3D render, clean studio \
-lighting, excessive background detail, UI, HUD, captions, labels, \
-watermarks, fake text, and unreadable symbols.
+Always avoid (style-independent):
+UI, HUD, captions, labels, watermarks, fake text, unreadable \
+symbols, blank expression, exaggerated beauty.
 
 If source notes conflict:
 Prefer visual coherence. For example, if the prompt needs the face \
@@ -319,8 +309,7 @@ direction, texture, colour transition - within the first third of \
 the paragraph. Not just the hair def name.
 9. The portrait is anchored on one grounded RimWorld action \
 translated visually, not a static or generic pose.
-10. The closing phrase is exactly: "realistic gritty RimWorld \
-sci-fi colony portrait, grounded expression, no UI." with no \
+10. The closing phrase is exactly: "{closer_phrase}" with no \
 extra words after it."""
 
 
@@ -332,9 +321,9 @@ FAMILY_PROMPT_INSTRUCTION = (
   "portrait of the focus pawn and the listed members.\n\n"
   + _output_format(130, 260)
   + "Core goal:\n"
-  "Create a believable group portrait of these people, not a poster, "
-  "character sheet, fashion shoot, game screenshot, or generic "
-  "concept-art lineup.\n\n"
+  "Create a single coherent group portrait image of these people, "
+  "in the style described below.\n\n"
+  "{style_section_prose}\n\n"
   "Prompt content:\n"
   "- Open with 'Family portrait of...' or 'Group portrait of...'. "
   "Do NOT include pawn names in the prompt; image models don't read "
@@ -377,25 +366,12 @@ FAMILY_PROMPT_INSTRUCTION = (
   "- One shared camera + lens + lighting line for the whole "
   "composition (e.g. 'shot on 50mm at f/4, warm directional light "
   "from camera-right').\n\n"
-  "Style:\n"
-  "Realistic cinematic portrait language. Natural proportions, "
-  "practical materials, imperfect surfaces, lived-in clothing, "
-  "visible texture, subtle asymmetry, believable skin, weathering, "
-  "dust, sweat, grime, restrained color grading.\n\n"
-  "RimWorld context:\n"
-  "Use gritty colony survival imagery - patched clothing, "
-  "improvised armor, steel walls, workshops, med bays, rough "
-  "repairs, utility lighting, hostile weather outside, worn tools, "
-  "practical weapons, tired eyes, grounded expressions. Do not "
-  "copy RimWorld's top-down game UI style.\n\n"
-  "Avoid:\n"
-  "Static line-up framing, glamor retouching, exaggerated beauty, "
-  "superhero poster composition, glossy fantasy armor, anime, "
-  "cartoon, chibi, plastic-looking 3D render, clean studio "
-  "lighting, UI, HUD, captions, labels, watermarks, unreadable "
-  "fake text.\n\n"
+  "Always avoid (style-independent):\n"
+  "UI, HUD, captions, labels, watermarks, fake text, unreadable "
+  "symbols, blank expressions, exaggerated beauty, static line-up "
+  "framing.\n\n"
   + _SPARSE_NOTES
-  + _ender("family portrait, grounded expressions")
+  + 'End with "{closer_phrase}"'
 )
 
 
@@ -407,9 +383,9 @@ ACTION_PROMPT_INSTRUCTION = (
   "like a still frame from a live-action movie.\n\n"
   + _output_format(120, 260)
   + "Core goal:\n"
-  "Create a single frozen moment from a believable movie scene, not "
-  "a poster, character sheet, portrait, game screenshot, or "
-  "concept-art lineup.\n\n"
+  "Create a single coherent action image of the subject, in the "
+  "style described below.\n\n"
+  "{style_section_prose}\n\n"
   "Prompt content:\n"
   "- Do NOT include the pawn's name in the prompt; image models "
   "don't read names visually and themed nicknames can pull weird "
@@ -463,94 +439,90 @@ ACTION_PROMPT_INSTRUCTION = (
   "drop late details, so anchor these early.\n"
   "- Keep the environment active and relevant to the action.\n"
   + _EMPTY_HELMET
-  + "\nStyle:\n"
-  "Realistic live-action cinematic sci-fi or grounded film-still "
-  "language. Natural proportions, practical materials, imperfect "
-  "surfaces, weathering, dust, sweat, grime, believable clothing, "
-  "restrained cinematic color grading.\n\n"
-  "RimWorld context:\n"
-  "Use gritty colony survival imagery - improvised defenses, steel "
-  "walls, muddy yards, hydroponics rooms, workshops, med bays, "
-  "transport pods, hostile weather, emergency lights, damaged "
-  "armor, practical weapons, patched clothing, exhausted but "
-  "grounded expressions. Do not copy RimWorld's top-down game UI "
-  "style.\n\n"
-  "Avoid:\n"
-  "Static portrait pose, centered character-sheet framing, "
-  "superhero poster composition, glossy fantasy armor, anime, "
-  "cartoon, chibi, plastic-looking 3D render, clean studio "
-  "lighting, excessive beauty retouching, UI, HUD, captions, "
-  "labels, watermarks, unreadable fake text.\n\n"
+  + "\nAlways avoid (style-independent):\n"
+  "UI, HUD, captions, labels, watermarks, fake text, unreadable "
+  "symbols, static portrait pose, centered character-sheet framing, "
+  "exaggerated beauty.\n\n"
   "When source notes include multiple characters, show "
   "relationship-aware blocking - distance, touch, eye lines, "
   "shielding gestures, hesitation, conflict, coordination. "
   + _CHILD_SAFETY + "\n\n"
   + _SPARSE_NOTES
-  + _ender("action still")
+  + 'End with "{closer_phrase}"'
 )
 
 
 # --- Per-model overlays ---------------------------------------------
 # Thin model-specific notes appended to the base instruction when
-# --image targets a known model. Encodes what the documented
-# prompting guidance for each model says to do (or avoid) on top of
-# the general voice in the base instructions above.
+# --image targets a known model. Each overlay is parameterised on
+# the active style's ``mode_trigger`` so the leading-verb / mode
+# rule swaps with the style (renaissance gets "An oil painting",
+# default gets "Photorealistic", etc.).
 
 
-_OVERLAY_GPT_IMAGE_2 = (
-  "Additional notes for OpenAI gpt-image-2 (the downstream image "
-  "model):\n"
-  "- Lead the paragraph with the word \"Photorealistic\" - it is "
-  "gpt-image-2's documented mode trigger.\n"
-  "- gpt-image-2 has no negative-prompt parameter; rely on in-prompt "
-  "exclusions (\"no UI\", \"no text overlay\", \"no watermark\").\n"
-  "- For any held/carried object, name the hand (\"left hand\"), "
-  "the height (\"at hip\", \"under arm\"), and the state "
-  "(\"empty\", \"sheathed\", \"shouldered\") - gpt-image-2's "
-  "Thinking Mode reasons over explicit spatial relationships, and "
-  "naming them is the documented antidote to negative-space "
-  "hallucinations."
-)
-
-_OVERLAY_GEMINI_PRO = (
-  "Additional notes for Google Gemini 3 Pro Image - Nano Banana Pro "
-  "(the downstream image model):\n"
-  "- Start the paragraph with a strong verb: \"Render\", "
-  "\"Photograph\", \"Paint\".\n"
-  "- Use POSITIVE reframing of negatives - describe what IS, not "
-  "what isn't. Instead of \"no head in the helmet\" write \"empty "
-  "helmet gripped by the rim, hollow leather-lined interior facing "
-  "the camera\".\n"
-  "- Use material-specific nouns (\"navy tweed cuirass\" over "
-  "\"armor\"; \"sun-bleached canvas duster\" over \"jacket\") - the "
-  "highest-ROI lever this model rewards.\n"
-  "- Pro tolerates and rewards dense clause-heavy prompts; aim "
-  "toward the upper end of the word budget when the source block "
-  "is rich."
-)
-
-_OVERLAY_GEMINI_FLASH = (
-  "Additional notes for Google Gemini 3.1 Flash Image - Nano "
-  "Banana 2 (the downstream image model):\n"
-  "- Start the paragraph with a strong verb: \"Photograph\", "
-  "\"Render\".\n"
-  "- Flash drops detail aggressively on long prompts; aim for the "
-  "lower end of the word budget and strip nice-to-have flourishes.\n"
-  "- Use POSITIVE reframing of negatives (\"empty helmet, hollow "
-  "interior visible\" not \"no head in the helmet\").\n"
-  "- Soften violence/wound language to avoid the safety filter: "
-  "prefer \"battle-worn\", \"scarred\", \"weathered\", "
-  "\"powder-burned\" over explicit gore verbs. Describe weapons as "
-  "objects (\"holds a bolt-action rifle\") not actions "
-  "(\"aiming\", \"firing\") unless the block clearly signals "
-  "active combat."
-)
+def _overlay_gpt_image_2(mode_trigger: str) -> str:
+  return (
+    "Additional notes for OpenAI gpt-image-2 (the downstream image "
+    "model):\n"
+    f"- Lead the paragraph with \"{mode_trigger}\" - it is "
+    "gpt-image-2's documented mode trigger.\n"
+    "- gpt-image-2 has no negative-prompt parameter; rely on "
+    "in-prompt exclusions (\"no UI\", \"no text overlay\", "
+    "\"no watermark\").\n"
+    "- For any held/carried object, name the hand (\"left hand\"), "
+    "the height (\"at hip\", \"under arm\"), and the state "
+    "(\"empty\", \"sheathed\", \"shouldered\") - gpt-image-2's "
+    "Thinking Mode reasons over explicit spatial relationships, and "
+    "naming them is the documented antidote to negative-space "
+    "hallucinations."
+  )
 
 
-_PER_MODEL_OVERLAY: dict[str, str] = {
-  "gpt-image-2": _OVERLAY_GPT_IMAGE_2,
-  "gemini-3-pro-image-preview": _OVERLAY_GEMINI_PRO,
-  "gemini-3.1-flash-image-preview": _OVERLAY_GEMINI_FLASH,
+def _overlay_gemini_pro(mode_trigger: str) -> str:
+  return (
+    "Additional notes for Google Gemini 3 Pro Image - Nano Banana "
+    "Pro (the downstream image model):\n"
+    f"- Start the paragraph with \"{mode_trigger}\" or another "
+    "strong verb that matches the style (\"Render\", "
+    "\"Photograph\", \"Paint\").\n"
+    "- Use POSITIVE reframing of negatives - describe what IS, not "
+    "what isn't. Instead of \"no head in the helmet\" write "
+    "\"empty helmet gripped by the rim, hollow leather-lined "
+    "interior facing the camera\".\n"
+    "- Use material-specific nouns (\"navy tweed cuirass\" over "
+    "\"armor\"; \"sun-bleached canvas duster\" over \"jacket\") - "
+    "the highest-ROI lever this model rewards.\n"
+    "- Pro tolerates and rewards dense clause-heavy prompts; aim "
+    "toward the upper end of the word budget when the source block "
+    "is rich."
+  )
+
+
+def _overlay_gemini_flash(mode_trigger: str) -> str:
+  return (
+    "Additional notes for Google Gemini 3.1 Flash Image - Nano "
+    "Banana 2 (the downstream image model):\n"
+    f"- Start the paragraph with \"{mode_trigger}\" or another "
+    "strong verb that matches the style (\"Photograph\", "
+    "\"Render\").\n"
+    "- Flash drops detail aggressively on long prompts; aim for "
+    "the lower end of the word budget and strip nice-to-have "
+    "flourishes.\n"
+    "- Use POSITIVE reframing of negatives (\"empty helmet, "
+    "hollow interior visible\" not \"no head in the helmet\").\n"
+    "- Soften violence/wound language to avoid the safety filter: "
+    "prefer \"battle-worn\", \"scarred\", \"weathered\", "
+    "\"powder-burned\" over explicit gore verbs. Describe weapons "
+    "as objects (\"holds a bolt-action rifle\") not actions "
+    "(\"aiming\", \"firing\") unless the block clearly signals "
+    "active combat."
+  )
+
+
+_PER_MODEL_OVERLAY: dict[str, "Callable[[str], str]"] = {
+  "gpt-image-2": _overlay_gpt_image_2,
+  "gemini-3-pro-image-preview": _overlay_gemini_pro,
+  "gemini-3.1-flash-image-preview": _overlay_gemini_flash,
 }
 
 
@@ -561,24 +533,122 @@ _KIND_TO_BASE: dict[str, str] = {
 }
 
 
+# --- Default style sections (no-preset path) -------------------------
+# When no preset is active, the kind's core is rendered with the
+# kind's default section. The prose here reconstitutes the original
+# Style + Avoid + RimWorld-context language so existing no-preset
+# users see no behaviour change after the refactor.
+
+_DEFAULT_PORTRAIT_SECTION = StyleSection(
+  mode_trigger="Photorealistic",
+  closer_phrase=(
+    "realistic gritty RimWorld sci-fi colony portrait, "
+    "grounded expression, no UI."
+  ),
+  prose=(
+    "Style:\n"
+    "Use realistic cinematic portrait language: natural proportions, "
+    "believable skin texture, subtle asymmetry, practical materials, "
+    "worn surfaces, dust, scratches, sweat, grime, lived-in clothing, "
+    "restrained color grading, shallow depth of field, realistic "
+    "lens feel, soft side light or motivated practical light.\n\n"
+    "Avoid (style-dependent):\n"
+    "Glamour retouching, static passport-photo pose, centered "
+    "character-sheet framing, superhero poster composition, "
+    "fantasy knight armor, glossy fantasy armor, anime, cartoon, "
+    "chibi, plastic-looking 3D render, clean studio lighting, "
+    "excessive background detail."
+  ),
+)
+
+_DEFAULT_FAMILY_SECTION = StyleSection(
+  mode_trigger="Photorealistic",
+  closer_phrase=(
+    "realistic gritty RimWorld sci-fi colony family portrait, "
+    "grounded expressions, no UI."
+  ),
+  prose=(
+    "Style:\n"
+    "Realistic cinematic portrait language. Natural proportions, "
+    "practical materials, imperfect surfaces, lived-in clothing, "
+    "visible texture, subtle asymmetry, believable skin, weathering, "
+    "dust, sweat, grime, restrained color grading.\n\n"
+    "RimWorld context:\n"
+    "Use gritty colony survival imagery - patched clothing, "
+    "improvised armor, steel walls, workshops, med bays, rough "
+    "repairs, utility lighting, hostile weather outside, worn "
+    "tools, practical weapons, tired eyes, grounded expressions. "
+    "Do not copy RimWorld's top-down game UI style.\n\n"
+    "Avoid (style-dependent):\n"
+    "Glamour retouching, superhero poster composition, glossy "
+    "fantasy armor, anime, cartoon, chibi, plastic-looking 3D "
+    "render, clean studio lighting."
+  ),
+)
+
+_DEFAULT_ACTION_SECTION = StyleSection(
+  mode_trigger="Photorealistic",
+  closer_phrase=(
+    "realistic gritty RimWorld sci-fi colony action still, no UI."
+  ),
+  prose=(
+    "Style:\n"
+    "Realistic live-action cinematic sci-fi or grounded film-still "
+    "language. Natural proportions, practical materials, imperfect "
+    "surfaces, weathering, dust, sweat, grime, believable clothing, "
+    "restrained cinematic color grading.\n\n"
+    "RimWorld context:\n"
+    "Use gritty colony survival imagery - improvised defenses, "
+    "steel walls, muddy yards, hydroponics rooms, workshops, med "
+    "bays, transport pods, hostile weather, emergency lights, "
+    "damaged armor, practical weapons, patched clothing, exhausted "
+    "but grounded expressions. Do not copy RimWorld's top-down "
+    "game UI style.\n\n"
+    "Avoid (style-dependent):\n"
+    "Superhero poster composition, glossy fantasy armor, anime, "
+    "cartoon, chibi, plastic-looking 3D render, clean studio "
+    "lighting."
+  ),
+)
+
+
+_KIND_TO_DEFAULT_SECTION: dict[str, StyleSection] = {
+  "portrait": _DEFAULT_PORTRAIT_SECTION,
+  "family": _DEFAULT_FAMILY_SECTION,
+  "action": _DEFAULT_ACTION_SECTION,
+}
+
+
 def instruction_for(
-  kind: str, image_model: str | None = None
+  kind: str,
+  image_model: str | None = None,
+  section: StyleSection | None = None,
 ) -> str:
-  """Pick the system instruction for this image kind, with overlay.
+  """Assemble the system instruction for this image kind.
 
   ``kind`` is ``portrait`` (single pawn), ``family`` (group), or
-  ``action`` (cinematic still). The matching base instruction (in
-  the user's reference voice) is returned, with a short per-model
-  overlay appended when ``image_model`` matches one of the three
-  tuned models.
+  ``action`` (cinematic still). ``section`` is the style envelope
+  to splice in; when omitted, the kind's default section is used
+  (matches today's no-preset output).
+
+  The model-specific overlay (when ``image_model`` matches a tuned
+  model) is appended below the assembled base, with its
+  leading-verb rule wired to the section's ``mode_trigger`` so it
+  doesn't contradict the active style.
   """
   if kind not in _KIND_TO_BASE:
     raise ValueError(f"unknown render kind {kind!r}")
-  base = _KIND_TO_BASE[kind]
-  overlay = _PER_MODEL_OVERLAY.get(image_model) if image_model else None
-  if overlay:
-    return f"{base}\n\n{overlay}"
-  return base
+  if section is None:
+    section = _KIND_TO_DEFAULT_SECTION[kind]
+  base = _KIND_TO_BASE[kind].format(
+    closer_phrase=section.closer_phrase,
+    style_section_prose=section.prose,
+  )
+  overlay_fn = _PER_MODEL_OVERLAY.get(image_model) if image_model else None
+  if overlay_fn is None:
+    return base
+  overlay = overlay_fn(section.mode_trigger)
+  return f"{base}\n\n{overlay}"
 
 
 # --- helpers ----------------------------------------------------------

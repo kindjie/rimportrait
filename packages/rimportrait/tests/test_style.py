@@ -1,147 +1,38 @@
-"""Style preset resolution + instruction composition."""
+"""Style preset registry + single-path instruction composer."""
 
 from __future__ import annotations
 
 import pytest
 
 from rimportrait import style
-from rimportrait.style import StylePreset
+from rimportrait.style import StylePreset, StyleSection
 
 
-def test_resolve_no_inputs_returns_empty_preset():
-  out = style.resolve(None, None)
-  assert out == StylePreset()
-  assert not out.any_set()
-
-
-def test_resolve_preset_only_fills_all_three_dimensions():
-  out = style.resolve("renaissance", None)
-  assert out.style and out.shot and out.camera
-  assert "renaissance" in out.style.lower()
-  # No accidental "Photorealistic" suppression escape - the painterly
-  # override must explicitly tell the LLM not to use that mode trigger.
-  assert "NOT a photograph" in out.style
-
-
-def test_resolve_style_override_beats_preset():
-  out = style.resolve("renaissance", "anime")
-  assert out.style == "anime"
-  # Untouched preset fields survive - only --style overrides; the
-  # preset's shot / camera prose still flows through unchanged.
-  assert out.shot is not None and "three-quarter" in out.shot
-  assert out.camera is not None
-
-
-def test_compose_unchanged_when_no_overrides():
-  base = "BASE"
-  assert style.compose_instruction(base, "portrait", StylePreset()) \
-    == "BASE"
-
-
-def test_compose_appends_style_block_and_overrides_closer():
-  out = style.compose_instruction(
-    "BASE", "portrait",
-    StylePreset(style="oil painting", shot=None, camera=None),
-  )
-  # Addendum now prepends with the override header.
-  assert out.startswith("USER STYLE OVERRIDE")
-  # Base instruction lands after the separator.
-  assert "\n\n---\n\nBASE" in out
-  assert "Style: oil painting." in out
-  assert ('End the paragraph with: "oil painting RimWorld sci-fi '
-          'colony portrait, no UI."') in out
-
-
-def test_compose_omits_closer_override_when_no_style():
-  out = style.compose_instruction(
-    "BASE", "portrait",
-    StylePreset(style=None, shot="action", camera="35mm"),
-  )
-  assert "Composition: action." in out
-  assert "Camera: 35mm." in out
-  # No style means no closer override - base instruction's closer
-  # remains the one in effect.
-  assert "End the paragraph with:" not in out
-
-
-def test_compose_uses_family_descriptor_for_family_kind():
-  out = style.compose_instruction(
-    "BASE", "family",
-    StylePreset(style="oil painting", shot=None, camera=None),
-  )
-  assert 'sci-fi colony family portrait, no UI.' in out
-
-
-def test_compose_includes_all_three_dimensions_when_set():
-  out = style.compose_instruction(
-    "BASE", "portrait",
-    StylePreset(style="anime", shot="action", camera="35mm wide"),
-  )
-  assert "Style: anime." in out
-  assert "Composition: action." in out
-  assert "Camera: 35mm wide." in out
+# --- preset registry shape ------------------------------------------
 
 
 def test_presets_have_expected_starter_names():
-  # If you rename or remove presets, update the CLI --preset choices
-  # docs in the README too.
   expected = {
-    "renaissance", "action", "oil-painting",
+    "renaissance", "acrylic", "action",
     "comic", "anime", "propaganda", "pixel-art",
   }
-  assert expected.issubset(set(style.PRESETS.keys()))
+  assert expected == set(style.PRESETS.keys()), (
+    "If you rename or remove presets, update the README's preset "
+    "table too."
+  )
 
 
 @pytest.mark.parametrize("name", list(style.PRESETS.keys()))
-def test_every_preset_has_at_least_one_dimension(name):
-  assert style.PRESETS[name].any_set()
+def test_every_preset_has_a_section(name):
+  preset = style.PRESETS[name]
+  assert preset.section is not None, name
 
 
-def test_scene_alone_appends_block_but_keeps_default_closer():
-  out = style.compose_instruction(
-    "BASE", "portrait",
-    StylePreset(scene="crowded refugee corridor, smoke"),
-  )
-  assert "Scene: crowded refugee corridor, smoke." in out
-  assert "End the paragraph with:" not in out
-
-
-def test_time_alone_appends_time_of_day_line():
-  out = style.compose_instruction(
-    "BASE", "portrait", StylePreset(time="dusk"),
-  )
-  assert "Time of day: dusk." in out
-
-
-def test_resolve_preset_scene_and_time_flow_through():
-  """Presets may set ``scene`` / ``time`` (e.g. a future
-  cinematic-night preset). The CLI no longer exposes per-knob
-  overrides, but the preset's pre-set values must still reach the
-  composed instruction."""
-  custom = StylePreset(scene="burning barn", time="golden-hour")
-  # Direct StylePreset path - simulates a hand-authored preset entry.
-  assert custom.scene == "burning barn"
-  assert custom.time == "golden-hour"
-  assert custom.any_set()
-
-
-def test_resolve_preserves_preset_action_base():
-  """Resolving the ``action`` preset (no --style override) must keep
-  the base-swap signal so the LLM picks the action voice instead of
-  the portrait voice."""
-  out = style.resolve("action", None)
-  assert out.base == "action"
-  assert out.shot is not None
-  assert out.camera is not None
-
-
-def test_action_preset_uses_action_base():
-  """The action preset swaps the LLM system instruction's base
-  voice via StylePreset.base instead of setting a style closer.
-  """
+def test_action_preset_uses_action_base_swap():
+  """The action preset is the only one that swaps the base
+  instruction file (via base='action'); every other preset uses
+  the portrait base with its own style section."""
   assert style.PRESETS["action"].base == "action"
-  assert style.PRESETS["action"].style is None
-  # Non-action presets must not accidentally swap the base.
   for name, preset in style.PRESETS.items():
     if name == "action":
       continue
@@ -150,91 +41,207 @@ def test_action_preset_uses_action_base():
     )
 
 
-def test_compose_instruction_preserves_base_closer_when_action():
-  """When preset.base is set, compose_instruction must NOT inject
-  a portrait-style closer override - the action base instruction
-  has its own '...action still...' closer that should win.
-  """
-  out = style.compose_instruction(
-    "BASE",
-    "portrait",
-    StylePreset(
-      style="oil painting", base="action",
-    ),
-  )
-  # Style addendum still applies.
-  assert "Style: oil painting." in out
-  # But no closer override (would start "End the paragraph with:")
-  assert "End the paragraph with:" not in out
+# --- section content sanity checks ----------------------------------
 
 
-def test_closer_uses_short_style_when_full_style_is_verbose():
-  """Multi-clause style strings (e.g. comic / anime presets with
-  their explicit anti-references) must not bloat the closer."""
-  out = style.compose_instruction(
-    "BASE", "portrait",
-    StylePreset(
-      style=(
-        "Western graphic novel inks - bold halftone shading; "
-        "NOT anime"
-      ),
-    ),
-  )
-  # The full prose stays in the addendum.
-  assert (
-    "Style: Western graphic novel inks - bold halftone shading; "
-    "NOT anime."
-  ) in out
-  # The closer uses the trimmed lead phrase only.
-  assert ('End the paragraph with: "Western graphic novel inks '
-          'RimWorld sci-fi colony portrait, no UI."') in out
-  closer_segment = out.split(
-    'End the paragraph with: "', 1
-  )[1].split('"', 1)[0]
-  assert "NOT anime" not in closer_segment
+def test_section_mode_triggers_are_noun_phrases():
+  """The gpt-image-2 overlay reads 'Lead the paragraph with <X>',
+  so mode triggers should read naturally as opening noun phrases."""
+  for name, preset in style.PRESETS.items():
+    trigger = preset.section.mode_trigger
+    assert trigger.startswith(("A ", "An ", "The ")), (
+      f"preset {name!r} mode_trigger {trigger!r} should be a "
+      "noun phrase starting with 'A', 'An', or 'The'"
+    )
 
 
-def test_closer_passes_through_short_style_unchanged():
-  out = style.compose_instruction(
-    "BASE", "portrait", StylePreset(style="oil painting"),
-  )
-  assert ('End the paragraph with: "oil painting RimWorld sci-fi '
-          'colony portrait, no UI."') in out
+def test_section_closers_end_with_no_ui():
+  """Every closer ends with `, no UI.` so validation item 10's
+  exact-phrase check sees a consistent trailing marker."""
+  for name, preset in style.PRESETS.items():
+    closer = preset.section.closer_phrase
+    assert closer.endswith(", no UI."), (
+      f"preset {name!r} closer must end with ', no UI.' "
+      f"got: {closer!r}"
+    )
+
+
+def test_every_section_describes_medium_texture():
+  """Each section's prose must include an explicit 'Medium texture:'
+  block — the single biggest lever for making the medium feel real
+  in the rendered image. If you add a new preset, add the block."""
+  for name, preset in style.PRESETS.items():
+    assert "Medium texture:" in preset.section.prose, (
+      f"preset {name!r} section must include a 'Medium texture:' "
+      "block describing the physical / printing / film / digital "
+      "artifacts that make this medium recognisable"
+    )
+
+
+def test_anime_section_calls_out_cel_and_crt_artifacts():
+  """The anime preset is uniquely identifiable by cel-paint edges
+  plus analogue CRT-display artifacts — both must appear in the
+  medium-texture description."""
+  prose = style.PRESETS["anime"].section.prose
+  assert "cel" in prose.lower()
+  assert "CRT" in prose or "crt" in prose.lower()
+
+
+def test_comic_section_calls_out_halftone_and_registration():
+  prose = style.PRESETS["comic"].section.prose
+  assert "halftone" in prose.lower()
+  assert "registration" in prose.lower()
+
+
+def test_acrylic_section_distinguishes_from_renaissance():
+  """Acrylic and renaissance are both 'painted' presets; the
+  prose must explicitly disambiguate to keep the LLM from
+  mixing them."""
+  acrylic = style.PRESETS["acrylic"].section.prose
+  assert "acrylic" in acrylic.lower()
+  assert "saturated" in acrylic.lower() or "vibrant" in acrylic.lower()
+  # Negative-reference disambiguation against renaissance.
+  assert ("NOT" in acrylic and ("oil" in acrylic.lower()
+                                or "glaze" in acrylic.lower()
+                                or "Old Masters" in acrylic))
 
 
 def test_comic_and_anime_presets_explicitly_disambiguate():
-  """The two stylized-ink presets must name-check the OTHER tradition
-  in negation so the LLM doesn't blend them.
-
-  If you rephrase, keep at least one explicit anti-reference in each
-  preset (e.g. comic says "not anime"; anime says "not Western
-  comic").
-  """
-  comic = style.PRESETS["comic"].style or ""
-  anime = style.PRESETS["anime"].style or ""
-  assert "Western" in comic or "comic" in comic.lower()
-  assert "NOT anime" in comic or "not anime" in comic.lower()
-  assert "anime" in anime.lower() or "manga" in anime.lower()
-  assert (
-    "NOT Western" in anime or "not western" in anime.lower()
-    or "not comic" in anime.lower()
-  )
+  """The two stylized-ink presets must name-check the OTHER
+  tradition in negation so the LLM doesn't blend them."""
+  comic = style.PRESETS["comic"].section.prose
+  anime = style.PRESETS["anime"].section.prose
+  assert "anime" in comic.lower() and "NOT" in comic
+  assert "Western" in anime or "comic" in anime.lower()
 
 
-def test_action_preset_shot_references_save_signals():
-  """The action preset's shot prose must name the block fields it
-  elevates. The action base instruction already names them too, but
-  the shot field is what lands in the addendum that follows the
-  paragraph; keeping the reference here guards the dual-mention.
-  """
-  shot = style.PRESETS["action"].shot or ""
+def test_action_section_references_save_signals():
+  """The action section must name the block fields that drive its
+  verb choice (Pose/activity / Inspiration / combat-readiness
+  signals)."""
+  prose = style.PRESETS["action"].section.prose
   for signal in ("Pose/activity", "Inspiration"):
-    assert signal in shot, f"action preset must reference {signal!r}"
-  # At least one combat-readiness signal is named.
+    assert signal in prose, (
+      f"action section must reference {signal!r}"
+    )
   combat_terms = (
-    "combat", "shoot frenzy", "berserker", "piloting", "shambling",
-    "drug-high", "aggressive",
+    "combat", "shoot frenzy", "berserker", "piloting",
+    "shambling", "drug-high", "aggressive",
   )
-  assert any(t in shot for t in combat_terms), (
-    "action preset must name at least one combat-readiness signal"
+  assert any(t in prose for t in combat_terms), (
+    "action section must name at least one combat-readiness signal"
   )
+
+
+# --- compose_instruction --------------------------------------------
+
+
+def test_compose_no_preset_uses_default_section():
+  """No preset → the kind's default section drives the composed
+  output. No 'USER STYLE OVERRIDE' header should ever appear (that
+  was the legacy path, now removed)."""
+  out = style.compose_instruction("portrait", None)
+  assert "USER STYLE OVERRIDE" not in out
+  # Default section's closer is the original portrait closer.
+  assert ('realistic gritty RimWorld sci-fi colony portrait, '
+          'grounded expression, no UI.') in out
+
+
+def test_compose_with_preset_uses_section_closer_and_prose():
+  out = style.compose_instruction(
+    "portrait", style.PRESETS["renaissance"],
+  )
+  assert "USER STYLE OVERRIDE" not in out
+  assert "Renaissance Old Masters oil painting" in out
+  # Closer appears in both Output-format and validation item 10.
+  closer = style.PRESETS["renaissance"].section.closer_phrase
+  assert f'End with: "{closer}"' in out
+  assert f'closing phrase is exactly: "{closer}"' in out
+
+
+def test_compose_acrylic_distinct_from_renaissance():
+  """The acrylic preset must compose with its own mode trigger
+  and closer (regression against the rename-from-oil-painting)."""
+  out = style.compose_instruction(
+    "portrait", style.PRESETS["acrylic"],
+    image_model="gpt-image-2",
+  )
+  assert "USER STYLE OVERRIDE" not in out
+  assert "vibrant acrylic painting" in out.lower()
+  assert "Lead the paragraph with \"A vibrant acrylic painting\"" in out
+
+
+def test_compose_action_swaps_base_and_uses_section_closer():
+  """Action sets base='action'; compose_instruction's caller is
+  expected to pass effective_kind='action' so the action core is
+  selected. The section's action closer is used end-to-end."""
+  out = style.compose_instruction(
+    "portrait", style.PRESETS["action"],
+    effective_kind="action",
+  )
+  assert "USER STYLE OVERRIDE" not in out
+  assert (
+    'realistic gritty RimWorld sci-fi colony action still, no UI.'
+  ) in out
+
+
+def test_compose_threads_mode_trigger_into_gpt_image_2_overlay():
+  """The gpt-image-2 overlay's leading-verb rule must use the
+  active section's mode_trigger, not a hardcoded
+  'Photorealistic'."""
+  out = style.compose_instruction(
+    "portrait", style.PRESETS["renaissance"],
+    image_model="gpt-image-2",
+  )
+  assert 'Lead the paragraph with "An Old Masters oil painting"' in out
+  assert 'Lead the paragraph with "Photorealistic"' not in out
+
+
+def test_compose_default_mode_trigger_is_photorealistic():
+  """No preset → default section → overlay leads with
+  'Photorealistic' (today's no-preset behaviour preserved)."""
+  out = style.compose_instruction(
+    "portrait", None, image_model="gpt-image-2",
+  )
+  assert 'Lead the paragraph with "Photorealistic"' in out
+
+
+def test_compose_user_style_appends_to_section_prose():
+  """``--style "moody candlelit"`` lands as an additional-style-note
+  block on whichever section is active."""
+  out = style.compose_instruction(
+    "portrait", None, user_style="moody candlelit",
+  )
+  assert "Additional style note:" in out
+  assert "moody candlelit." in out
+
+
+def test_compose_user_style_with_preset_stacks_on_section():
+  """``--style`` works alongside ``--preset`` — the note appends
+  after the preset's own prose, not replacing it."""
+  out = style.compose_instruction(
+    "portrait", style.PRESETS["renaissance"],
+    user_style="dawn light",
+  )
+  # Renaissance prose still present.
+  assert "Renaissance Old Masters oil painting" in out
+  # User-style addendum present.
+  assert "Additional style note:" in out
+  assert "dawn light." in out
+
+
+# --- StyleSection invariants ----------------------------------------
+
+
+def test_style_section_dataclass_is_frozen():
+  """StyleSection is value-typed; instances must be immutable."""
+  s = StyleSection(prose="x", mode_trigger="y", closer_phrase="z")
+  with pytest.raises(Exception):
+    s.prose = "mutated"  # type: ignore[misc]
+
+
+def test_style_preset_dataclass_is_frozen():
+  s = StyleSection(prose="x", mode_trigger="y", closer_phrase="z")
+  p = StylePreset(section=s)
+  with pytest.raises(Exception):
+    p.base = "action"  # type: ignore[misc]

@@ -134,7 +134,7 @@ Starter presets (`--preset NAME`):
 |---|---|
 | `renaissance`    | Renaissance oil painting on canvas, plain dark background; explicit painted-language (brushwork / glaze / sfumato / chiaroscuro) with earth-tone palette |
 | `action`         | cinematic still; LLM anchors on the block's `Pose/activity` / `Inspiration` / combat-readiness signal |
-| `oil-painting`   | oil painting, classical framing, warm chiaroscuro |
+| `acrylic`        | vibrant contemporary acrylic painting on canvas — saturated palette, opaque flat-layered colour blocks, visible bristle-brush marks |
 | `comic`          | Western graphic novel ink illustration; bold halftone shading, hard-edged spot color |
 | `anime`          | Japanese cel-shaded illustration; clean line art, two-tone shadows, painted backgrounds, 90s OVA grain |
 | `propaganda`     | stark Soviet propaganda poster, heroic low angle, hard edges |
