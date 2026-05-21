@@ -239,6 +239,14 @@ def _build_parser() -> argparse.ArgumentParser:
     help="Stop at the rendered block; skip LLM and image (no API calls).",
   )
   mode.add_argument(
+    "--block-and-instruction-only", action="store_true",
+    help=(
+      "Like --block-only, but also append the composed LLM system "
+      "instruction (--preset / --style applied). Useful for pasting "
+      "block + instruction together into a chat UI."
+    ),
+  )
+  mode.add_argument(
     "--prompt-only", action="store_true",
     help="Run LLM, skip image gen. Writes the prompt only.",
   )
@@ -291,8 +299,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _resolve_mode(args: argparse.Namespace) -> str:
-  """Pick the rendering mode from flags. Single source of truth."""
-  if args.block_only:
+  """Pick the rendering mode from flags. Single source of truth.
+
+  Both --block-only and --block-and-instruction-only stop before the
+  LLM call; the latter just appends the composed instruction. The
+  --with-instruction post-processing in _render_one keys off
+  args.block_and_instruction_only directly."""
+  if args.block_only or args.block_and_instruction_only:
     return MODE_BLOCK
   if args.prompt_only:
     return MODE_PROMPT
@@ -392,19 +405,30 @@ def _context(
   return map_context_for(save, pawn)
 
 
-def _llm_polish(
-  args: argparse.Namespace, block: str, kind: str
+def _composed_instruction(
+  args: argparse.Namespace, kind: str
 ) -> str:
-  """Run the block through the LLM. Caller checks the mode first."""
+  """Build the LLM system instruction: base (portrait / family /
+  action) + per-image-model overlay + --preset / --style addendum.
+
+  This is the text the LLM would actually receive (or the text
+  appended to stdout when --with-instruction is set)."""
   image_model = llm.resolve_model(args.provider, "image", args.model)
   resolved = style.resolve(args.preset, args.style)
   effective_kind = kind
   if kind == "portrait" and resolved.base:
     effective_kind = resolved.base
-  system = style.compose_instruction(
+  return style.compose_instruction(
     instruction_for(effective_kind, image_model=image_model),
     kind, resolved,
   )
+
+
+def _llm_polish(
+  args: argparse.Namespace, block: str, kind: str
+) -> str:
+  """Run the block through the LLM. Caller checks the mode first."""
+  system = _composed_instruction(args, kind)
   return llm.complete(
     args.provider, system=system, user=block, model=args.model,
   )
@@ -433,10 +457,15 @@ def _render_one(
 ) -> None:
   """Drive the pipeline for a single pawn given a pre-rendered block.
 
-  The block was already rendered by the caller with
-  ``include_instruction`` set appropriately for the mode."""
+  Block mode emits just the block, unless
+  --block-and-instruction-only is set, in which case the composed
+  system instruction is appended too (paste-into-chat workflow).
+  Prompt mode runs the LLM; image mode runs LLM then image gen."""
   if mode == MODE_BLOCK:
-    _emit_text(args.out_dir, block, p, kind)
+    text = block
+    if args.block_and_instruction_only:
+      text = block + "\n\n" + _composed_instruction(args, kind)
+    _emit_text(args.out_dir, text, p, kind)
     return
   prompt = _llm_polish(args, block, kind)
   _emit_text(args.out_dir, prompt, p, kind)
@@ -478,11 +507,9 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
   save = load_save(args.savefile)
-  # The block's trailing instruction text is only useful in
-  # block-only mode (where the user might paste it into a chat UI
-  # manually). For prompt / image modes the instruction is the LLM
-  # system message, so the block stays instruction-free.
-  include_inst = (mode == MODE_BLOCK)
+  # The trailing instruction is now handled exclusively by the
+  # --with-instruction post-processor in _render_one, so the block
+  # itself is always rendered instruction-free regardless of mode.
   (def_index, defs_desc, defs_label, defs_cat, defs_cost, defs_tech,
    defs_layer) = _build_index(save, args)
   body_parts = _build_body_parts(args)
@@ -500,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
       members = family_members(save, focus, def_index, body_parts)
       block = render_family(
         focus, members, _context(save, focus),
-        include_instruction=include_inst,
+        include_instruction=False,
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
@@ -521,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
         return 4
       block = render_portrait(
         p, _context(save, p),
-        include_instruction=include_inst,
+        include_instruction=False,
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
@@ -534,7 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     for p in iter_colonists(save, def_index, body_parts):
       block = render_portrait(
         p, _context(save, p),
-        include_instruction=include_inst,
+        include_instruction=False,
         def_descriptions=defs_desc, def_labels=defs_label,
         def_categories=defs_cat,
         def_cost_materials=defs_cost,
