@@ -84,6 +84,35 @@ _KIND_GOOGLE_ASPECT = {
   "family": "4:3",
 }
 
+# OpenAI gpt-image-2 quality per tier. "low" speeds the image up
+# substantially at visibly lower fidelity; "high" is the default
+# for finals.
+_OPENAI_QUALITY = {"fast": "low", "pro": "high"}
+# Moderation stays at the most-permissive setting because RimWorld
+# blocks reference weapons, blood, and combat regularly — without
+# this the API refuses a non-trivial share of valid pawn prompts.
+_OPENAI_MODERATION = "low"
+
+
+def _tier_from_model_arg(model_arg: str | None) -> str:
+  """Map a --model arg back to its tier for tier-derived image
+  settings. Explicit model IDs default to pro-quality."""
+  if model_arg in (None, "pro"):
+    return "pro"
+  if model_arg == "fast":
+    return "fast"
+  return "pro"
+
+
+def image_quality_for(provider: str, tier: str) -> str | None:
+  """Return the quality knob value that ``generate_image`` will
+  pass to the provider for the given tier, or None when the
+  provider exposes no quality control (Google picks quality by
+  model selection rather than a per-call parameter)."""
+  if provider == "openai":
+    return _OPENAI_QUALITY.get(tier, "high")
+  return None
+
 
 def openai_complete(system: str, user: str, model: str) -> str:
   try:
@@ -153,7 +182,10 @@ def complete(
 # --- image generation ----------------------------------------------
 
 
-def openai_image(prompt: str, model: str, *, size: str) -> tuple[bytes, str]:
+def openai_image(
+  prompt: str, model: str, *,
+  size: str, quality: str = "high", moderation: str = "low",
+) -> tuple[bytes, str]:
   try:
     from openai import OpenAI  # type: ignore[import-not-found]
   except ImportError as e:
@@ -163,7 +195,10 @@ def openai_image(prompt: str, model: str, *, size: str) -> tuple[bytes, str]:
       "(or `uv add --dev 'rimportrait[openai]'`)"
     ) from e
   client = OpenAI()
-  resp = client.images.generate(model=model, prompt=prompt, size=size)
+  resp = client.images.generate(
+    model=model, prompt=prompt, size=size,
+    quality=quality, moderation=moderation,
+  )
   data = resp.data
   if not data or not data[0].b64_json:
     raise RuntimeError("openai images returned no content")
@@ -171,7 +206,7 @@ def openai_image(prompt: str, model: str, *, size: str) -> tuple[bytes, str]:
 
 
 def google_image(
-  prompt: str, model: str, *, aspect_ratio: str
+  prompt: str, model: str, *, aspect_ratio: str,
 ) -> tuple[bytes, str]:
   try:
     from google import genai  # type: ignore[import-not-found]
@@ -183,12 +218,37 @@ def google_image(
       "(or `uv add --dev 'rimportrait[google]'`)"
     ) from e
 
+  # Permissive safety thresholds so RimWorld's combat/blood/weapons
+  # vocabulary stops triggering blanket refusals. Equivalent of
+  # "moderation: low" on OpenAI. Wrapped in try/except per category
+  # because SDK versions differ on which categories exist; we want
+  # to set whichever ones the installed SDK supports without
+  # crashing when a name drifts.
+  def _safety():
+    out = []
+    for cat in (
+      "HARM_CATEGORY_HARASSMENT",
+      "HARM_CATEGORY_HATE_SPEECH",
+      "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+      "HARM_CATEGORY_DANGEROUS_CONTENT",
+    ):
+      try:
+        out.append(types.SafetySetting(
+          category=cat, threshold="BLOCK_NONE",
+        ))
+      except Exception:
+        pass
+    return out or None
+
   def _config(with_aspect: bool):
     kwargs: dict = {"response_modalities": ["IMAGE"]}
+    safety = _safety()
+    if safety:
+      kwargs["safety_settings"] = safety
     if with_aspect and hasattr(types, "ImageConfig"):
       try:
         kwargs["image_config"] = types.ImageConfig(
-          aspect_ratio=aspect_ratio
+          aspect_ratio=aspect_ratio,
         )
       except Exception:
         pass
@@ -197,13 +257,13 @@ def google_image(
   client = genai.Client()
   try:
     resp = client.models.generate_content(
-      model=model, contents=[prompt], config=_config(True)
+      model=model, contents=[prompt], config=_config(True),
     )
   except Exception as e:
     msg = str(e).lower()
     if "image_config" in msg or "aspect" in msg:
       resp = client.models.generate_content(
-        model=model, contents=[prompt], config=_config(False)
+        model=model, contents=[prompt], config=_config(False),
       )
     else:
       raise
@@ -245,10 +305,14 @@ def generate_image(
       f"unknown kind {kind!r}; expected 'portrait' or 'family'"
     )
   resolved_model = resolve_model(provider, "image", model)
+  tier = _tier_from_model_arg(model)
   if provider == "openai":
     return openai_image(
-      prompt, resolved_model, size=_KIND_OPENAI_SIZE[kind]
+      prompt, resolved_model,
+      size=_KIND_OPENAI_SIZE[kind],
+      quality=_OPENAI_QUALITY.get(tier, "high"),
+      moderation=_OPENAI_MODERATION,
     )
   return google_image(
-    prompt, resolved_model, aspect_ratio=_KIND_GOOGLE_ASPECT[kind]
+    prompt, resolved_model, aspect_ratio=_KIND_GOOGLE_ASPECT[kind],
   )

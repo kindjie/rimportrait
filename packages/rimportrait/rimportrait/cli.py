@@ -497,10 +497,15 @@ def _write_image(
 ) -> None:
   """Generate the image and write it next to the prompt."""
   image_model = llm.resolve_model(args.provider, "image", args.model)
-  _status(
-    f"Generating {kind} image for {name}",
-    f"({args.provider} {image_model})",
-  )
+  tier = "fast" if args.model == "fast" else "pro"
+  quality = llm.image_quality_for(args.provider, tier)
+  suffix = f"({args.provider} {image_model}"
+  if quality:
+    suffix += f", quality={quality}, moderation=low"
+  elif args.provider == "google":
+    suffix += ", permissive safety"
+  suffix += ")"
+  _status(f"Generating {kind} image for {name}", suffix)
   png, ext = llm.generate_image(
     args.provider, prompt, kind, model=args.model,
   )

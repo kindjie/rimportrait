@@ -1,15 +1,26 @@
-"""Minimal Tkinter GUI for non-technical users.
+"""Tkinter GUI organised around the three pipeline stages.
 
-Single window over the existing pipeline (`cli._render_one`). On
-launch it scans the platform-default RimWorld Saves directory
-(``rimsave.autodetect_saves_dir``), pre-selects the most recent
-save, and reads the provider's API key from the OS keychain via
-``keyring``. The user clicks Generate; the pipeline runs in a
-worker thread and progress lines from ``cli._status`` stream into
-a Text widget via a swappable sink.
+The window stacks three cards inside a scrollable frame, with a
+collapsible Account & model section at top and a collapsible log
+footer at the bottom:
 
-Entry point: ``rimportrait-gui`` (defined in pyproject.toml).
-Requires the ``[gui]`` extra: keyring, Pillow, platformdirs.
+  1. Load save data — pick a save + pawn; renders the structured
+     `[PORTRAIT SUBJECT]` block in memory and previews it.
+  2. Generate prompt — preset + style note; runs the LLM polish on
+     the cached block and writes the result into an editable text
+     box the user can tweak before paying for an image.
+  3. Generate image — output folder; runs the image model on the
+     (possibly edited) prompt and shows a thumbnail.
+
+Cards downstream gate on upstream output: changing the pawn
+invalidates the prompt and image; clearing the prompt disables
+the image button. Each card runs in its own background thread;
+progress lines stream through `cli._STATUS_SINK` into a per-card
+status label and a hidden log Text widget that auto-opens on
+errors.
+
+Entry point: `rimportrait-gui` in `pyproject.toml`. Requires the
+`[gui]` extra: keyring, Pillow, platformdirs.
 """
 
 from __future__ import annotations
@@ -29,46 +40,53 @@ from tkinter import filedialog, messagebox, ttk
 from rimsave import (
   autodetect_mod_paths,
   autodetect_saves_dir,
+  family_members,
+  find_pawn,
   installed_rimworld_version,
+  load_save,
+  map_context_for,
   read_save_game_version,
 )
 
 from . import cli, llm, style
+from .render import render_family, render_portrait
 
 
 APP_NAME = "rimportrait"
 KEYRING_SERVICE = "rimportrait"
 DEFAULT_OUTPUT = Path.home() / "Pictures" / "rimportrait"
 
-# The only RimWorld version we test the mod-aware def index against.
-# Saves from other versions usually still render, but def lookups
-# (apparel layers, tech levels, body parts) may drift, so we flag
-# them in the save dropdown and mention it under the save row.
+# Only RimWorld version we currently test the def index against.
 TESTED_VERSION = "1.6"
 
-
-# Maps the GUI provider radio onto the env-var that the underlying
-# llm.py code path reads. Mirrors cli._PROVIDER_KEY_VARS but flat.
+# CLI provider key -> env var the underlying SDKs read.
 _PROVIDER_ENV = {
   "openai": "OPENAI_API_KEY",
   "google": "GEMINI_API_KEY",
 }
 
+# Where to send the user to mint a key, one-click from the GUI.
+_PROVIDER_KEY_URL = {
+  "openai": "https://platform.openai.com/api-keys",
+  "google": "https://aistudio.google.com/app/apikey",
+}
+
+
+# --- pure helpers --------------------------------------------------
 
 @dataclass
 class SaveEntry:
   path: Path
   mtime: float
   game_version: str | None = None
-  untested: bool = False  # save not from the tested RimWorld version
+  untested: bool = False
 
   @property
   def label(self) -> str:
     age = _ago(time.time() - self.mtime)
     parts = [self.path.stem]
     if self.game_version:
-      short = _short_version(self.game_version)
-      tag = f"save {short}"
+      tag = f"save {_short_version(self.game_version)}"
       if self.untested:
         tag += " ⚠"
       parts.append(f"— {tag}")
@@ -77,8 +95,6 @@ class SaveEntry:
 
 
 def _short_version(v: str) -> str:
-  """'1.5.4297 rev1126' -> '1.5'. Falls back to the full string when
-  the format is unrecognised (modded builds, alphas)."""
   head = v.split(" ", 1)[0]
   bits = head.split(".")
   if len(bits) >= 2 and all(b.isdigit() for b in bits[:2]):
@@ -101,23 +117,15 @@ def _ago(seconds: float) -> str:
     return "just now"
   if seconds < 3600:
     n = int(seconds // 60)
-    return f"{n} min ago" if n != 1 else "1 min ago"
+    return "1 min ago" if n == 1 else f"{n} min ago"
   if seconds < 86400:
     n = int(seconds // 3600)
-    return f"{n} hr ago" if n != 1 else "1 hr ago"
+    return "1 hr ago" if n == 1 else f"{n} hr ago"
   n = int(seconds // 86400)
-  return f"{n} days ago" if n != 1 else "1 day ago"
+  return "1 day ago" if n == 1 else f"{n} days ago"
 
-
-# --- persistent per-user config -------------------------------------
 
 def _config_path() -> Path:
-  """Return the on-disk path for the GUI's small JSON config.
-
-  Stores the manually-chosen saves dir + RimWorld dir so the user
-  isn't re-prompted on every launch. Uses platformdirs when present;
-  falls back to ``~/.config/rimportrait/config.json`` so the GUI
-  doesn't crash if the extra wasn't installed."""
   try:
     from platformdirs import user_config_dir
     base = Path(user_config_dir(APP_NAME))
@@ -141,8 +149,6 @@ def _save_config(cfg: dict) -> None:
   _config_path().write_text(json.dumps(cfg, indent=2))
 
 
-# --- keychain glue (graceful when keyring missing) -----------------
-
 def _keychain_get(provider: str) -> str:
   try:
     import keyring
@@ -151,23 +157,23 @@ def _keychain_get(provider: str) -> str:
     return ""
 
 
-def _keychain_set(provider: str, value: str) -> bool:
+def _keychain_set(provider: str, value: str) -> tuple[bool, str]:
+  """Returns (ok, error_message). On macOS the first call triggers a
+  Keychain auth prompt; if the user cancels or denies, the backend
+  raises and we surface the real reason instead of a generic note."""
   try:
     import keyring
+  except ImportError:
+    return (False, "keyring package not installed (install the "
+                    "[gui] extra)")
+  try:
     keyring.set_password(KEYRING_SERVICE, provider, value)
-    return True
-  except Exception:
-    return False
+    return (True, "")
+  except Exception as e:
+    return (False, f"{type(e).__name__}: {e}")
 
-
-# --- saves discovery -----------------------------------------------
 
 def _list_saves(saves_dir: Path) -> list[SaveEntry]:
-  """Enumerate .rws files in saves_dir, decorated with game version.
-
-  Version is iterparse-bounded to the save's `<meta>` block so this
-  stays fast even with dozens of saves. Saves outside ``TESTED_VERSION``
-  get an ``untested`` flag the label uses to show ⚠."""
   if not saves_dir.is_dir():
     return []
   entries: list[SaveEntry] = []
@@ -175,8 +181,8 @@ def _list_saves(saves_dir: Path) -> list[SaveEntry]:
     if child.suffix.lower() != ".rws" or not child.is_file():
       continue
     gv = read_save_game_version(child)
-    save_mm = _major_minor(gv)
-    untested = bool(save_mm and ".".join(save_mm) != TESTED_VERSION)
+    mm = _major_minor(gv)
+    untested = bool(mm and ".".join(mm) != TESTED_VERSION)
     entries.append(SaveEntry(
       path=child, mtime=child.stat().st_mtime,
       game_version=gv, untested=untested,
@@ -185,7 +191,141 @@ def _list_saves(saves_dir: Path) -> list[SaveEntry]:
   return entries
 
 
-# --- the window ----------------------------------------------------
+_ANSI_RE = None
+
+
+def _strip_ansi(s: str) -> str:
+  global _ANSI_RE
+  if _ANSI_RE is None:
+    import re
+    _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+  return _ANSI_RE.sub("", s)
+
+
+def _slug(s: str) -> str:
+  return cli._slug(s)
+
+
+# --- widgets -------------------------------------------------------
+
+class _Collapsible(ttk.Frame):
+  """Header label + arrow that hides/shows a body frame.
+
+  Tk lacks a native disclosure widget; this is the minimal version
+  the cards use for the data-block preview, the Account section,
+  and the log footer."""
+
+  def __init__(
+    self, parent, title: str, *, open: bool = False,
+  ) -> None:
+    super().__init__(parent)
+    self._open = open
+    self._title = title
+    self._btn = ttk.Button(
+      self, command=self.toggle, style="Toolbutton",
+    )
+    self._btn.pack(fill="x", anchor="w")
+    self.body = ttk.Frame(self)
+    self._refresh_button()
+    if open:
+      self.body.pack(fill="x", expand=True, padx=(16, 0), pady=(2, 0))
+
+  def _refresh_button(self) -> None:
+    arrow = "▾" if self._open else "▸"
+    self._btn.configure(text=f"{arrow} {self._title}")
+
+  def set_title(self, title: str) -> None:
+    self._title = title
+    self._refresh_button()
+
+  def toggle(self) -> None:
+    self._open = not self._open
+    if self._open:
+      self.body.pack(fill="x", expand=True, padx=(16, 0), pady=(2, 0))
+    else:
+      self.body.forget()
+    self._refresh_button()
+
+  def open(self) -> None:
+    if not self._open:
+      self.toggle()
+
+
+class _ScrollableFrame(ttk.Frame):
+  """Vertically scrollable container. Place children in `.inner`."""
+
+  def __init__(self, parent) -> None:
+    super().__init__(parent)
+    self._canvas = tk.Canvas(self, highlightthickness=0)
+    sb = ttk.Scrollbar(
+      self, orient="vertical", command=self._canvas.yview,
+    )
+    self._canvas.configure(yscrollcommand=sb.set)
+    sb.pack(side="right", fill="y")
+    self._canvas.pack(side="left", fill="both", expand=True)
+    self.inner = ttk.Frame(self._canvas)
+    self._win = self._canvas.create_window(
+      (0, 0), window=self.inner, anchor="nw",
+    )
+    self.inner.bind(
+      "<Configure>",
+      lambda _e: self._canvas.configure(
+        scrollregion=self._canvas.bbox("all"),
+      ),
+    )
+    self._canvas.bind(
+      "<Configure>",
+      lambda e: self._canvas.itemconfigure(self._win, width=e.width),
+    )
+    # Mouse-wheel scrolling. On macOS event.delta is small (~±1 per
+    # notch); on Windows it's 120-per-notch; on X11 wheel events come
+    # in as Button-4/Button-5 instead. Dividing macOS deltas as if
+    # they were Windows-sized rounds most events to zero — that was
+    # the source of the laggy feel.
+    import sys as _sys
+    if _sys.platform == "darwin":
+      self._wheel_step = lambda d: -d
+    else:
+      self._wheel_step = lambda d: -int(d / 120) or (-1 if d > 0 else 1)
+    self._canvas.bind_all("<MouseWheel>", self._on_wheel)
+    self._canvas.bind_all(
+      "<Button-4>", lambda _e: self._canvas.yview_scroll(-3, "units"),
+    )
+    self._canvas.bind_all(
+      "<Button-5>", lambda _e: self._canvas.yview_scroll(3, "units"),
+    )
+
+  def _on_wheel(self, event) -> None:
+    # Route the wheel to the right widget: a Text under the cursor
+    # scrolls its own content; a Combobox popdown (which Tk doesn't
+    # track via winfo_containing, raising KeyError) handles its own
+    # scroll and we must NOT also scroll the canvas behind it.
+    try:
+      target = self._canvas.winfo_containing(event.x_root, event.y_root)
+    except KeyError:
+      return  # popdown / menu is open — let it handle the wheel
+    step = self._wheel_step(event.delta)
+    cur = target
+    while cur is not None and cur is not self._canvas:
+      if isinstance(cur, tk.Text):
+        # Chain to the outer canvas once the Text hits its limit:
+        # scrolling down (step>0) at the bottom (yview[1]==1.0),
+        # or up (step<0) at the top (yview[0]==0.0).
+        top, bottom = cur.yview()
+        if (step > 0 and bottom >= 1.0) or (step < 0 and top <= 0.0):
+          break
+        cur.yview_scroll(step, "units")
+        return
+      cur = cur.master
+    self._canvas.yview_scroll(step, "units")
+
+
+def _help(parent, text: str) -> ttk.Label:
+  """Inline grey one-liner under a field's label."""
+  return ttk.Label(parent, text=text, foreground="#888")
+
+
+# --- the App -------------------------------------------------------
 
 class App:
   def __init__(self, root: tk.Tk) -> None:
@@ -198,41 +338,133 @@ class App:
     self.saves: list[SaveEntry] = (
       _list_saves(self.saves_dir) if self.saves_dir else []
     )
+
+    # Per-stage caches.
     self.selected_save: Path | None = None
+    self.save_obj = None
+    self.def_index = None
+    self.defs_desc = None
+    self.defs_label = None
+    self.defs_cat = None
+    self.defs_cost = None
+    self.defs_tech = None
+    self.defs_layer = None
+    self.body_parts = None
     self.pawn_names: list[str] = []
-    self.progress_q: queue.Queue[str] = queue.Queue()
+    self.block: str | None = None
+    self.block_signature: tuple | None = None
+    self.prompt: str | None = None
+    self.prompt_dirty = False
     self.last_image: Path | None = None
-    self.preview_imgref: object | None = None  # keep ref alive
+    self.preview_imgref: object | None = None
+
+    # Per-stage worker bookkeeping.
+    self.progress_q: queue.Queue[str] = queue.Queue()
+    self.active_stage: str | None = None  # "card1" | "card2" | "card3"
+    self._t_start: float = 0.0
 
     root.title(f"{APP_NAME}  —  RimWorld portrait generator")
-    root.geometry("720x720")
-    self._build_form()
-    self._build_log()
-    self._build_preview()
+    root.geometry("780x900")
+
+    self._build_layout()
     self._populate_saves()
     self._prefill_key()
+    self._on_provider_change()  # decide whether to open Account
+    # React to provider/tier flips with a fresh model-label render.
+    self.provider_var.trace_add("write", self._refresh_model_labels)
+    self.tier_var.trace_add("write", self._refresh_model_labels)
+    self._refresh_model_labels()
+    self._refresh_card2_enabled()
+    self._refresh_card3_enabled()
     self._poll_log_queue()
 
-  # form ------------------------------------------------------------
+  # ----- layout --------------------------------------------------
 
-  def _build_form(self) -> None:
-    f = ttk.Frame(self.root, padding=10)
-    f.pack(fill="x")
-    f.columnconfigure(1, weight=1)
+  def _build_layout(self) -> None:
+    sf = _ScrollableFrame(self.root)
+    sf.pack(fill="both", expand=True)
+    container = sf.inner
+    container.columnconfigure(0, weight=1)
 
-    row = 0
-    ttk.Label(f, text="Save:").grid(row=row, column=0, sticky="e")
+    self._build_account(container)
+    self._build_card1(container)
+    self._build_card2(container)
+    self._build_card3(container)
+    self._build_log_footer(container)
+
+  # ----- Account & model -----------------------------------------
+
+  def _build_account(self, parent) -> None:
+    self.account = _Collapsible(parent, "Account & model", open=False)
+    self.account.pack(fill="x", padx=10, pady=(8, 4))
+    body = self.account.body
+    body.columnconfigure(1, weight=1)
+
+    ttk.Label(body, text="Provider:").grid(row=0, column=0, sticky="e")
+    pf = ttk.Frame(body)
+    pf.grid(row=0, column=1, columnspan=2, sticky="w")
+    self.provider_var = tk.StringVar(value="openai")
+    for p in llm.PROVIDERS:
+      ttk.Radiobutton(
+        pf, text=p, variable=self.provider_var, value=p,
+        command=self._on_provider_change,
+      ).pack(side="left", padx=4)
+    _help(body, "Which LLM service to use. Each needs its own key.").grid(
+      row=1, column=1, columnspan=2, sticky="w", padx=4, pady=(0, 4),
+    )
+
+    ttk.Label(body, text="API key:").grid(row=2, column=0, sticky="e")
+    self.key_var = tk.StringVar()
+    ttk.Entry(
+      body, textvariable=self.key_var, show="*",
+    ).grid(row=2, column=1, sticky="ew", padx=4)
+    kbtns = ttk.Frame(body)
+    kbtns.grid(row=2, column=2, sticky="w")
+    ttk.Button(
+      kbtns, text="Save to keychain", command=self._save_key,
+    ).pack(side="left")
+    ttk.Button(
+      kbtns, text="Get a key →", command=self._open_key_page,
+    ).pack(side="left", padx=(4, 0))
+    _help(
+      body,
+      "Stored in your OS keychain (macOS Keychain / Windows "
+      "Credential Manager). Set once.",
+    ).grid(row=3, column=1, columnspan=2, sticky="w", padx=4, pady=(0, 4))
+
+    ttk.Label(body, text="Tier:").grid(row=4, column=0, sticky="e")
+    tf = ttk.Frame(body)
+    tf.grid(row=4, column=1, columnspan=2, sticky="w")
+    self.tier_var = tk.StringVar(value="pro")
+    for t in ("pro", "fast"):
+      ttk.Radiobutton(
+        tf, text=t, variable=self.tier_var, value=t,
+      ).pack(side="left", padx=4)
+    _help(
+      body, "Pro = best results, slower & costlier. Fast = quicker.",
+    ).grid(row=5, column=1, columnspan=2, sticky="w", padx=4)
+
+  # ----- Card 1: Load save data ----------------------------------
+
+  def _build_card1(self, parent) -> None:
+    card = ttk.LabelFrame(parent, text="1. Load save data", padding=8)
+    card.pack(fill="x", padx=10, pady=4)
+    card.columnconfigure(1, weight=1)
+
+    ttk.Label(card, text="Save:").grid(row=0, column=0, sticky="e")
     self.save_var = tk.StringVar()
     self.save_combo = ttk.Combobox(
-      f, textvariable=self.save_var, state="readonly",
+      card, textvariable=self.save_var, state="readonly",
     )
-    self.save_combo.grid(row=row, column=1, sticky="ew", padx=4)
+    self.save_combo.grid(row=0, column=1, sticky="ew", padx=4)
     self.save_combo.bind("<<ComboboxSelected>>", self._on_save_selected)
     ttk.Button(
-      f, text="Other...", command=self._browse_save,
-    ).grid(row=row, column=2)
+      card, text="Other...", command=self._browse_save,
+    ).grid(row=0, column=2)
+    _help(card, "Which colony save to read.").grid(
+      row=1, column=1, columnspan=2, sticky="w", padx=4, pady=(0, 4),
+    )
 
-    row += 1
     bits = [f"Tested against RimWorld {TESTED_VERSION}"]
     if self.installed_version:
       bits.append(
@@ -241,113 +473,235 @@ class App:
     else:
       bits.append("install not detected — mod-aware labels disabled")
     ttk.Label(
-      f, text="  ·  ".join(bits), foreground="#888",
-    ).grid(row=row, column=1, columnspan=2, sticky="w", padx=4)
+      card, text="  ·  ".join(bits), foreground="#888",
+    ).grid(row=2, column=1, columnspan=2, sticky="w", padx=4)
 
-    row += 1
-    ttk.Label(f, text="Pawn:").grid(row=row, column=0, sticky="e")
+    ttk.Label(card, text="Pawn:").grid(row=3, column=0, sticky="e")
     self.pawn_var = tk.StringVar()
     self.pawn_combo = ttk.Combobox(
-      f, textvariable=self.pawn_var, state="disabled",
+      card, textvariable=self.pawn_var, state="disabled",
     )
-    self.pawn_combo.grid(row=row, column=1, sticky="ew", padx=4)
+    self.pawn_combo.grid(row=3, column=1, sticky="ew", padx=4)
+    self.pawn_combo.bind("<<ComboboxSelected>>", self._on_pawn_changed)
     self.family_var = tk.BooleanVar(value=False)
     ttk.Checkbutton(
-      f, text="Family", variable=self.family_var,
-    ).grid(row=row, column=2)
+      card, text="Family", variable=self.family_var,
+      command=self._on_pawn_changed,
+    ).grid(row=3, column=2)
+    _help(card, "Which colonist the portrait is of.").grid(
+      row=4, column=1, columnspan=2, sticky="w", padx=4, pady=(0, 4),
+    )
 
-    row += 1
-    ttk.Label(f, text="Preset:").grid(row=row, column=0, sticky="e")
+    self.card1_status = ttk.Label(
+      card, text="Pick a save to begin.", foreground="#aaa",
+    )
+    self.card1_status.grid(
+      row=5, column=0, columnspan=3, sticky="w", padx=2, pady=(4, 2),
+    )
+
+    self.block_panel = _Collapsible(card, "Show data block", open=False)
+    self.block_panel.grid(
+      row=6, column=0, columnspan=3, sticky="ew", padx=2,
+    )
+    self.block_text = tk.Text(
+      self.block_panel.body, height=14, wrap="word",
+      font=("Menlo", 10),
+    )
+    self.block_text.pack(fill="x", expand=True)
+    self.block_text.configure(state="disabled")
+
+  # ----- Card 2: Generate prompt ---------------------------------
+
+  def _build_card2(self, parent) -> None:
+    card = ttk.LabelFrame(parent, text="2. Generate prompt", padding=8)
+    card.pack(fill="x", padx=10, pady=4)
+    card.columnconfigure(1, weight=1)
+    self._card2 = card
+
+    ttk.Label(card, text="Preset:").grid(row=0, column=0, sticky="e")
     self.preset_var = tk.StringVar(value="(none)")
     self.preset_combo = ttk.Combobox(
-      f, textvariable=self.preset_var, state="readonly",
+      card, textvariable=self.preset_var, state="readonly",
       values=["(none)"] + sorted(style.PRESETS.keys()),
     )
-    self.preset_combo.grid(row=row, column=1, sticky="ew", padx=4)
+    self.preset_combo.grid(row=0, column=1, sticky="ew", padx=4)
+    _help(
+      card,
+      "Art-style bundle. e.g. 'renaissance' = oil-painting feel, "
+      "'anime' = cel-shaded, '(none)' = plain photo-real.",
+    ).grid(row=1, column=1, sticky="w", padx=4, pady=(0, 4))
 
-    row += 1
-    ttk.Label(f, text="Style note:").grid(row=row, column=0, sticky="e")
+    ttk.Label(card, text="Style note:").grid(row=2, column=0, sticky="e")
     self.style_var = tk.StringVar()
-    ttk.Entry(f, textvariable=self.style_var).grid(
-      row=row, column=1, columnspan=2, sticky="ew", padx=4,
+    ttk.Entry(card, textvariable=self.style_var).grid(
+      row=2, column=1, sticky="ew", padx=4,
+    )
+    _help(
+      card,
+      "Optional extra style words appended to the preset "
+      "(e.g. 'moody candlelit', 'overcast').",
+    ).grid(row=3, column=1, sticky="w", padx=4, pady=(0, 4))
+
+    action2 = self._build_action_row(
+      card, row=4,
+      btn_text="Generate prompt",
+      command=self._start_generate_prompt,
+      model_var_key="card2",
+    )
+    (
+      self.card2_btn, self.card2_spinner, self.card2_model_label,
+      self.card2_action_holder,
+    ) = action2
+
+    self.card2_status = ttk.Label(
+      card, text="Load a save first.", foreground="#aaa",
+    )
+    self.card2_status.grid(
+      row=5, column=0, columnspan=3, sticky="w", padx=2,
     )
 
-    row += 1
-    ttk.Label(f, text="Provider:").grid(row=row, column=0, sticky="e")
-    pf = ttk.Frame(f)
-    pf.grid(row=row, column=1, columnspan=2, sticky="w")
-    self.provider_var = tk.StringVar(value="openai")
-    for p in llm.PROVIDERS:
-      ttk.Radiobutton(
-        pf, text=p, variable=self.provider_var, value=p,
-        command=self._prefill_key,
-      ).pack(side="left", padx=4)
-    ttk.Label(pf, text="    Tier:").pack(side="left")
-    self.tier_var = tk.StringVar(value="pro")
-    for t in ("pro", "fast"):
-      ttk.Radiobutton(
-        pf, text=t, variable=self.tier_var, value=t,
-      ).pack(side="left")
+    ttk.Label(
+      card, text="Prompt (editable):", foreground="#aaa",
+    ).grid(row=6, column=0, columnspan=3, sticky="w", padx=2, pady=(6, 0))
+    self.prompt_text = tk.Text(
+      card, height=10, wrap="word", font=("Menlo", 10),
+    )
+    self.prompt_text.grid(
+      row=7, column=0, columnspan=3, sticky="ew", padx=2,
+    )
+    # Dirty tracking: programmatic inserts clear dirty; user edits
+    # set it via the <<Modified>> event.
+    self.prompt_text.bind("<<Modified>>", self._on_prompt_modified)
+    self.prompt_text.bind("<KeyRelease>", lambda _e: self._refresh_card3_enabled())
 
-    row += 1
-    ttk.Label(f, text="API key:").grid(row=row, column=0, sticky="e")
-    self.key_var = tk.StringVar()
-    ttk.Entry(
-      f, textvariable=self.key_var, show="*",
-    ).grid(row=row, column=1, sticky="ew", padx=4)
-    ttk.Button(
-      f, text="Save to keychain", command=self._save_key,
-    ).grid(row=row, column=2)
+  # ----- Card 3: Generate image ----------------------------------
 
-    row += 1
-    ttk.Label(f, text="Output:").grid(row=row, column=0, sticky="e")
+  def _build_card3(self, parent) -> None:
+    card = ttk.LabelFrame(parent, text="3. Generate image", padding=8)
+    card.pack(fill="x", padx=10, pady=4)
+    card.columnconfigure(1, weight=1)
+    self._card3 = card
+
+    ttk.Label(card, text="Output:").grid(row=0, column=0, sticky="e")
     self.out_var = tk.StringVar(value=str(DEFAULT_OUTPUT))
-    ttk.Entry(f, textvariable=self.out_var).grid(
-      row=row, column=1, sticky="ew", padx=4,
+    ttk.Entry(card, textvariable=self.out_var).grid(
+      row=0, column=1, sticky="ew", padx=4,
     )
     ttk.Button(
-      f, text="Browse...", command=self._browse_out,
-    ).grid(row=row, column=2)
-
-    row += 1
-    ttk.Label(f, text="Mode:").grid(row=row, column=0, sticky="e")
-    mf = ttk.Frame(f)
-    mf.grid(row=row, column=1, columnspan=2, sticky="w")
-    self.mode_var = tk.StringVar(value="image")
-    for m, lbl in (
-      ("image", "Image"),
-      ("prompt", "Prompt only"),
-      ("block", "Block only"),
-    ):
-      ttk.Radiobutton(
-        mf, text=lbl, variable=self.mode_var, value=m,
-      ).pack(side="left", padx=4)
-
-    row += 1
-    self.generate_btn = ttk.Button(
-      f, text="Generate", command=self._start_generate,
-    )
-    self.generate_btn.grid(
-      row=row, column=0, columnspan=3, sticky="e", pady=8,
+      card, text="Browse...", command=self._browse_out,
+    ).grid(row=0, column=2)
+    _help(card, "Folder the PNG is written to.").grid(
+      row=1, column=1, sticky="w", padx=4, pady=(0, 4),
     )
 
-  def _build_log(self) -> None:
-    self.log = tk.Text(
-      self.root, height=10, wrap="none", font=("Menlo", 11),
-      background="#111", foreground="#ddd",
+    action3 = self._build_action_row(
+      card, row=2,
+      btn_text="Generate image",
+      command=self._start_generate_image,
+      model_var_key="card3",
     )
-    self.log.pack(fill="both", expand=False, padx=10, pady=(0, 6))
-    self.log.configure(state="disabled")
+    (
+      self.card3_btn, self.card3_spinner, self.card3_model_label,
+      self.card3_action_holder,
+    ) = action3
 
-  def _build_preview(self) -> None:
+    self.card3_status = ttk.Label(
+      card, text="Generate a prompt first.", foreground="#aaa",
+    )
+    self.card3_status.grid(
+      row=3, column=0, columnspan=3, sticky="w", padx=2,
+    )
+
     self.preview = ttk.Label(
-      self.root, text="(image preview will appear here)",
-      anchor="center",
+      card, text="(image preview will appear here)",
+      anchor="center", foreground="#666",
     )
-    self.preview.pack(fill="both", expand=True, padx=10, pady=10)
+    self.preview.grid(
+      row=4, column=0, columnspan=3, sticky="ew", pady=(8, 2),
+    )
     self.preview.bind("<Button-1>", self._open_image)
 
-  # init helpers ----------------------------------------------------
+  # ----- action row helper (model label + button/spinner) -------
+
+  def _build_action_row(
+    self, card, *, row: int, btn_text: str, command, model_var_key: str,
+  ):
+    """Build a right-aligned [ model · settings ] [ button|spinner ] row.
+
+    The button and the indeterminate Progressbar share a
+    fixed-size holder so swapping one for the other doesn't
+    reflow the surrounding grid (which would otherwise feel
+    jarring as the spinner is a different intrinsic width)."""
+    row_frame = ttk.Frame(card)
+    row_frame.grid(
+      row=row, column=0, columnspan=3, sticky="ew", padx=2, pady=4,
+    )
+    row_frame.columnconfigure(0, weight=1)
+
+    model_label = ttk.Label(row_frame, text="", foreground="#888")
+    model_label.grid(row=0, column=0, sticky="e", padx=(0, 8))
+
+    holder = ttk.Frame(row_frame, width=170, height=28)
+    holder.grid(row=0, column=1, sticky="e")
+    holder.grid_propagate(False)
+    holder.columnconfigure(0, weight=1)
+    holder.rowconfigure(0, weight=1)
+
+    btn = ttk.Button(holder, text=btn_text, command=command)
+    btn.grid(row=0, column=0, sticky="nsew")
+    spinner = ttk.Progressbar(holder, mode="indeterminate")
+    # Don't grid the spinner yet — it's hidden until generation runs.
+
+    return btn, spinner, model_label, holder
+
+  def _show_spinner(self, btn, spinner) -> None:
+    btn.grid_remove()
+    spinner.grid(row=0, column=0, sticky="ew", padx=4)
+    spinner.start(12)
+
+  def _hide_spinner(self, btn, spinner) -> None:
+    spinner.stop()
+    spinner.grid_remove()
+    btn.grid()
+
+  def _refresh_model_labels(self, *_args) -> None:
+    """Update the small "openai · pro · <model-id>" hint next to each
+    Generate button. Called once at init and again whenever provider
+    or tier changes."""
+    provider = self.provider_var.get()
+    tier = self.tier_var.get()
+    try:
+      text_model = llm.resolve_model(provider, "text", tier)
+      image_model = llm.resolve_model(provider, "image", tier)
+    except Exception:
+      text_model = image_model = "?"
+    base = f"{provider} · {tier}"
+    image_extras = ""
+    quality = llm.image_quality_for(provider, tier)
+    if quality:
+      image_extras = f"  ·  q={quality}  ·  mod=low"
+    elif provider == "google":
+      image_extras = "  ·  safety=permissive"
+    if hasattr(self, "card2_model_label"):
+      self.card2_model_label.configure(text=f"{base} · {text_model}")
+    if hasattr(self, "card3_model_label"):
+      self.card3_model_label.configure(
+        text=f"{base} · {image_model}{image_extras}",
+      )
+
+  # ----- log footer ----------------------------------------------
+
+  def _build_log_footer(self, parent) -> None:
+    self.log_panel = _Collapsible(parent, "Show log details", open=False)
+    self.log_panel.pack(fill="x", padx=10, pady=(4, 10))
+    self.log = tk.Text(
+      self.log_panel.body, height=8, wrap="none",
+      font=("Menlo", 10), background="#111", foreground="#ddd",
+    )
+    self.log.pack(fill="x", expand=True)
+    self.log.configure(state="disabled")
+
+  # ----- save discovery & pawn list ------------------------------
 
   def _resolve_saves_dir(self) -> Path | None:
     saved = self.cfg.get("saves_dir")
@@ -364,11 +718,6 @@ class App:
     self.save_combo.current(0)
     self._on_save_selected(None)
 
-  def _prefill_key(self) -> None:
-    self.key_var.set(_keychain_get(self.provider_var.get()))
-
-  # actions ---------------------------------------------------------
-
   def _browse_save(self) -> None:
     initial = str(self.saves_dir) if self.saves_dir else str(Path.home())
     chosen = filedialog.askopenfilename(
@@ -383,7 +732,6 @@ class App:
     _save_config(self.cfg)
     self.saves_dir = path.parent
     self.saves = _list_saves(self.saves_dir)
-    # Reorder so the chosen file is first.
     self.saves.sort(key=lambda e: (e.path != path, -e.mtime))
     self._populate_saves()
 
@@ -391,8 +739,325 @@ class App:
     idx = self.save_combo.current()
     if idx < 0 or idx >= len(self.saves):
       return
-    self.selected_save = self.saves[idx].path
-    self._load_pawn_names_async()
+    entry = self.saves[idx]
+    if entry.untested:
+      ok = messagebox.askyesno(
+        APP_NAME,
+        f"This save is from RimWorld "
+        f"{_short_version(entry.game_version or '?')}.\n\n"
+        f"rimportrait is only tested against {TESTED_VERSION}; "
+        "labels may drift (apparel layers, tech levels, body parts). "
+        "Continue anyway?",
+        icon="warning",
+      )
+      if not ok:
+        self.card1_status.configure(text="Pick a different save.")
+        return
+    self.selected_save = entry.path
+    self._invalidate_block()
+    self.card1_status.configure(
+      text=f"Loading {entry.path.name}…",
+    )
+    self._start_load_save(entry.path)
+
+  def _on_pawn_changed(self, *_args) -> None:
+    self._invalidate_block()
+    if self.save_obj is None or not self.pawn_var.get():
+      return
+    self._render_block_inline()
+
+  def _invalidate_block(self) -> None:
+    self.block = None
+    self.block_signature = None
+    self._refresh_card2_enabled()
+    if self.card2_status.cget("text") and self.block is None:
+      self.card2_status.configure(
+        text="Block changed — click Generate prompt to refresh.",
+      )
+
+  # ----- Card 1 worker (load) ------------------------------------
+
+  def _start_load_save(self, save_path: Path) -> None:
+    self.active_stage = "card1"
+    self._t_start = time.monotonic()
+    cli.set_status_sink(self._sink)
+
+    # Reset downstream state when the underlying save changes.
+    self.save_obj = None
+    self.def_index = None
+    self.pawn_names = []
+    self.pawn_combo["state"] = "disabled"
+    self.pawn_combo["values"] = []
+    self.pawn_var.set("")
+
+    def work():
+      try:
+        save = load_save(save_path)
+        ns = argparse.Namespace(no_defs=False, rimworld_dir=None)
+        (idx, dd, dl, dc, dco, dt, dla) = cli._build_index(save, ns)
+        if idx is not None:
+          # cli._build_index already calls register_def_short_hashes,
+          # but only when paths exist; keep both paths consistent.
+          pass
+        bp = cli._build_body_parts(ns)
+        names = cli._list_pawn_names(save, idx, bp)
+      except Exception:
+        self.progress_q.put("!card1-error!" + traceback.format_exc())
+        return
+      # Stash heavy objects FIRST so _handle_card1_done's inline
+      # block render sees them. Polling consumes one item per tick.
+      self.progress_q.put(("__stash__", save, idx, dd, dl, dc, dco, dt, dla, bp))  # type: ignore
+      payload = {
+        "names": names,
+        "n_defs": len(idx) if idx else 0,
+        "has_mods": idx is not None,
+      }
+      self.progress_q.put("!card1-done!" + json.dumps(payload))
+
+    threading.Thread(target=work, daemon=True).start()
+
+  def _render_block_inline(self) -> None:
+    """Synchronously render the block for the current pawn into the
+    preview area. Cheap (no API calls); called every time the pawn
+    or family flag changes."""
+    if self.save_obj is None:
+      return
+    pawn_name = self.pawn_var.get().strip()
+    if not pawn_name:
+      return
+    try:
+      p = find_pawn(
+        self.save_obj, pawn_name, self.def_index, self.body_parts,
+      )
+      if p is None:
+        self.card1_status.configure(text=f"✗ pawn not found: {pawn_name}")
+        return
+      ctx = map_context_for(self.save_obj, p)
+      common = dict(
+        include_instruction=False,
+        def_descriptions=self.defs_desc, def_labels=self.defs_label,
+        def_categories=self.defs_cat,
+        def_cost_materials=self.defs_cost,
+        def_tech_levels=self.defs_tech,
+        def_apparel_layers=self.defs_layer,
+      )
+      if self.family_var.get():
+        members = family_members(
+          self.save_obj, p, self.def_index, self.body_parts,
+        )
+        block = render_family(p, members, ctx, **common)
+        kind = "family"
+      else:
+        block = render_portrait(p, ctx, **common)
+        kind = "portrait"
+    except Exception as e:
+      self.card1_status.configure(text=f"✗ render failed: {e}")
+      return
+    self.block = block
+    self.block_signature = (
+      str(self.selected_save), pawn_name, self.family_var.get(), kind,
+    )
+    self._set_block_preview(block)
+    self.card1_status.configure(
+      text=f"✓ {kind} block ready ({len(block):,} chars)",
+    )
+    self._refresh_card2_enabled()
+    self.card2_status.configure(
+      text="Block changed — click Generate prompt to refresh.",
+    )
+
+  def _set_block_preview(self, block: str) -> None:
+    self.block_text.configure(state="normal")
+    self.block_text.delete("1.0", "end")
+    self.block_text.insert("1.0", block)
+    self.block_text.configure(state="disabled")
+    self.block_panel.set_title(f"Show data block ({len(block):,} chars)")
+
+  # ----- Card 2 worker (LLM polish) ------------------------------
+
+  def _start_generate_prompt(self) -> None:
+    if not self.block:
+      messagebox.showerror(APP_NAME, "Load a save and pick a pawn first.")
+      return
+    if self.prompt_dirty:
+      ok = messagebox.askyesno(
+        APP_NAME,
+        "You've edited the prompt. Regenerating will overwrite your "
+        "edits. Continue?",
+        icon="warning",
+      )
+      if not ok:
+        return
+    provider = self.provider_var.get()
+    key = self.key_var.get().strip()
+    if not key:
+      self.account.open()
+      messagebox.showerror(
+        APP_NAME,
+        f"Paste your {provider} API key in the Account section first.",
+      )
+      return
+    os.environ[_PROVIDER_ENV[provider]] = key
+
+    preset_name = self.preset_var.get()
+    preset = (
+      style.PRESETS.get(preset_name) if preset_name != "(none)" else None
+    )
+    kind = "family" if self.family_var.get() else "portrait"
+    effective_kind = kind
+    if kind == "portrait" and preset is not None and preset.base:
+      effective_kind = preset.base
+    image_model = llm.resolve_model(provider, "image", self.tier_var.get())
+    system = style.compose_instruction(
+      kind, preset,
+      image_model=image_model, effective_kind=effective_kind,
+      user_style=self.style_var.get().strip() or None,
+    )
+    block = self.block
+    tier = self.tier_var.get()
+
+    self._show_spinner(self.card2_btn, self.card2_spinner)
+    self.card2_status.configure(text="Generating prompt…")
+    self.active_stage = "card2"
+    self._t_start = time.monotonic()
+    cli.set_status_sink(self._sink)
+
+    def work():
+      try:
+        out = llm.complete(
+          provider, system=system, user=block, model=tier,
+        )
+      except Exception:
+        self.progress_q.put("!card2-error!" + traceback.format_exc())
+        return
+      self.progress_q.put("!card2-done!" + json.dumps({
+        "prompt": out,
+        "model": llm.resolve_model(provider, "text", tier),
+      }))
+
+    threading.Thread(target=work, daemon=True).start()
+
+  def _on_prompt_modified(self, _evt) -> None:
+    # <<Modified>> fires for every change including our own inserts;
+    # we clear the modified flag after programmatic writes by calling
+    # edit_modified(False), so any time this fires it's a user edit.
+    if self.prompt_text.edit_modified():
+      self.prompt_dirty = True
+      self.prompt_text.edit_modified(False)
+      self._refresh_card3_enabled()
+
+  def _set_prompt(self, prompt: str) -> None:
+    self.prompt_text.delete("1.0", "end")
+    self.prompt_text.insert("1.0", prompt)
+    self.prompt_text.edit_modified(False)
+    self.prompt = prompt
+    self.prompt_dirty = False
+    self._refresh_card3_enabled()
+
+  def _current_prompt(self) -> str:
+    return self.prompt_text.get("1.0", "end-1c").strip()
+
+  def _refresh_card2_enabled(self) -> None:
+    enabled = self.block is not None
+    self.card2_btn["state"] = "normal" if enabled else "disabled"
+    if not enabled:
+      self.card2_status.configure(text="Load a save first.")
+
+  def _refresh_card3_enabled(self) -> None:
+    enabled = bool(self._current_prompt())
+    self.card3_btn["state"] = "normal" if enabled else "disabled"
+    # Only refresh status when nothing has run yet — once the user
+    # has generated an image, the success line stays put.
+    if self.last_image is not None:
+      return
+    if enabled:
+      self.card3_status.configure(text="Ready — click Generate image.")
+    else:
+      self.card3_status.configure(text="Generate a prompt first.")
+
+  # ----- Card 3 worker (image gen) -------------------------------
+
+  def _start_generate_image(self) -> None:
+    prompt = self._current_prompt()
+    if not prompt:
+      messagebox.showerror(APP_NAME, "Generate a prompt first.")
+      return
+    provider = self.provider_var.get()
+    key = self.key_var.get().strip()
+    if not key:
+      self.account.open()
+      messagebox.showerror(
+        APP_NAME,
+        f"Paste your {provider} API key in the Account section first.",
+      )
+      return
+    os.environ[_PROVIDER_ENV[provider]] = key
+
+    out_dir = Path(self.out_var.get()).expanduser()
+    try:
+      out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+      messagebox.showerror(APP_NAME, f"Can't create output folder: {e}")
+      return
+
+    pawn_name = self.pawn_var.get().strip() or "pawn"
+    kind = "family" if self.family_var.get() else "portrait"
+    tier = self.tier_var.get()
+
+    self._show_spinner(self.card3_btn, self.card3_spinner)
+    self.card3_status.configure(text="Generating image…")
+    self.active_stage = "card3"
+    self._t_start = time.monotonic()
+    cli.set_status_sink(self._sink)
+
+    def work():
+      try:
+        png, ext = llm.generate_image(
+          provider, prompt, kind, model=tier,
+        )
+      except Exception:
+        self.progress_q.put("!card3-error!" + traceback.format_exc())
+        return
+      fname = f"{_slug(pawn_name)}.{kind}.{ext}"
+      out_path = out_dir / fname
+      try:
+        out_path.write_bytes(png)
+      except OSError:
+        self.progress_q.put("!card3-error!" + traceback.format_exc())
+        return
+      self.progress_q.put(
+        "!card3-done!" + json.dumps({"path": str(out_path)})
+      )
+
+    threading.Thread(target=work, daemon=True).start()
+
+  # ----- Account actions -----------------------------------------
+
+  def _on_provider_change(self) -> None:
+    self._prefill_key()
+    if not self.key_var.get():
+      self.account.open()
+
+  def _prefill_key(self) -> None:
+    self.key_var.set(_keychain_get(self.provider_var.get()))
+
+  def _open_key_page(self) -> None:
+    import webbrowser
+    url = _PROVIDER_KEY_URL.get(self.provider_var.get())
+    if url:
+      webbrowser.open(url)
+
+  def _save_key(self) -> None:
+    ok, err = _keychain_set(self.provider_var.get(), self.key_var.get())
+    if ok:
+      self._append_log("Saved API key to keychain.")
+    else:
+      messagebox.showwarning(
+        APP_NAME,
+        f"Couldn't save to the OS keychain:\n\n{err}\n\n"
+        "The key still works for this session — it's just not "
+        "remembered across launches.",
+      )
 
   def _browse_out(self) -> None:
     chosen = filedialog.askdirectory(
@@ -400,18 +1065,6 @@ class App:
     )
     if chosen:
       self.out_var.set(chosen)
-
-  def _save_key(self) -> None:
-    ok = _keychain_set(self.provider_var.get(), self.key_var.get())
-    if ok:
-      self._append_log("Saved API key to keychain.")
-    else:
-      messagebox.showwarning(
-        APP_NAME,
-        "Couldn't reach the OS keychain. Install the [gui] extra "
-        "(`pip install rimportrait[gui]`) or set the API key in "
-        "your environment instead.",
-      )
 
   def _open_image(self, _evt) -> None:
     if self.last_image and self.last_image.is_file():
@@ -424,136 +1077,129 @@ class App:
       else:
         subprocess.Popen(["xdg-open", str(self.last_image)])
 
-  # pawn discovery (worker thread) ---------------------------------
+  # ----- progress sink + queue polling ---------------------------
 
-  def _load_pawn_names_async(self) -> None:
-    if not self.selected_save:
-      return
-    self.pawn_combo["state"] = "disabled"
-    self.pawn_combo["values"] = []
-    self.pawn_var.set("")
-    save_path = self.selected_save
+  def _sink(self, line: str) -> None:
+    # Called from worker threads; just queue and let the polling
+    # loop touch widgets on the main thread.
+    self.progress_q.put(line)
 
-    def work():
-      try:
-        from rimsave import (
-          build_def_index_from_save, autodetect_mod_paths, load_save,
-        )
-        save = load_save(save_path)
-        paths = autodetect_mod_paths()
-        idx = None
-        if paths.rimworld_data or paths.mods_dir or paths.workshop_dir:
-          idx = build_def_index_from_save(save, paths)
-        names = cli._list_pawn_names(save, idx, None)
-      except Exception as exc:
-        self.progress_q.put(f"!pawn-error!{exc}")
-        return
-      self.progress_q.put(f"!pawns!{json.dumps(names)}")
-
-    threading.Thread(target=work, daemon=True).start()
-
-  # generate (worker thread) ---------------------------------------
-
-  def _start_generate(self) -> None:
-    if not self.selected_save:
-      messagebox.showerror(APP_NAME, "Pick a save first.")
-      return
-    idx = self.save_combo.current()
-    if 0 <= idx < len(self.saves) and self.saves[idx].untested:
-      gv = self.saves[idx].game_version or "?"
-      ok = messagebox.askyesno(
-        APP_NAME,
-        f"This save is from RimWorld {_short_version(gv)}.\n\n"
-        f"rimportrait is only tested against {TESTED_VERSION}; the "
-        "output may be wrong (apparel layers, tech levels, body "
-        "parts can drift). Generate anyway?",
-        icon="warning",
-      )
-      if not ok:
-        return
-    mode = self.mode_var.get()
-    provider = self.provider_var.get()
-    if mode in ("image", "prompt"):
-      key = self.key_var.get().strip()
-      if not key:
-        messagebox.showerror(
-          APP_NAME,
-          f"Paste your {provider} API key first (then click 'Save "
-          "to keychain' to remember it).",
-        )
-        return
-      os.environ[_PROVIDER_ENV[provider]] = key
-
-    out_dir = Path(self.out_var.get()).expanduser()
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    preset = self.preset_var.get()
-    if preset == "(none)":
-      preset = None
-
-    args = argparse.Namespace(
-      savefile=self.selected_save,
-      pawn=self.pawn_var.get().strip() or None,
-      family=self.family_var.get(),
-      out_dir=out_dir,
-      block_only=(mode == "block"),
-      block_and_instruction_only=False,
-      prompt_only=(mode == "prompt"),
-      preset=preset,
-      style=self.style_var.get().strip() or None,
-      provider=provider,
-      model=self.tier_var.get(),
-      rimworld_dir=None,
-      no_defs=False,
-    )
-
-    self.generate_btn["state"] = "disabled"
-    self._clear_log()
-    cli.set_status_sink(lambda line: self.progress_q.put(line))
-    cli.reset_clock()
-
-    def work():
-      rc = 1
-      try:
-        rc = cli.main_with_args(args)  # type: ignore[attr-defined]
-      except SystemExit as se:
-        rc = int(se.code) if isinstance(se.code, int) else 1
-      except Exception:
-        self.progress_q.put("!error!" + traceback.format_exc())
-      finally:
-        self.progress_q.put(f"!done!{rc}")
-
-    threading.Thread(target=work, daemon=True).start()
-
-  # log + queue plumbing -------------------------------------------
+  def _elapsed(self) -> str:
+    return f"{time.monotonic() - self._t_start:.1f}s"
 
   def _poll_log_queue(self) -> None:
     try:
       while True:
         item = self.progress_q.get_nowait()
-        if item.startswith("!pawns!"):
-          names = json.loads(item[len("!pawns!"):])
-          self.pawn_names = names
-          self.pawn_combo["values"] = names
-          self.pawn_combo["state"] = "readonly"
-          if names and not self.pawn_var.get():
-            self.pawn_combo.current(0)
-        elif item.startswith("!pawn-error!"):
-          self._append_log("Save scan failed: " + item[len("!pawn-error!"):])
-        elif item.startswith("!error!"):
-          self._append_log(item[len("!error!"):])
-          messagebox.showerror(APP_NAME, item[len("!error!"):])
-        elif item.startswith("!done!"):
-          rc = item[len("!done!"):]
-          self.generate_btn["state"] = "normal"
-          cli.set_status_sink(None)
-          if rc == "0":
-            self._finish_success()
+        if isinstance(item, tuple) and item and item[0] == "__stash__":
+          # Heavy objects from card1 worker.
+          (_, save, idx, dd, dl, dc, dco, dt, dla, bp) = item
+          self.save_obj = save
+          self.def_index = idx
+          self.defs_desc, self.defs_label = dd, dl
+          self.defs_cat, self.defs_cost = dc, dco
+          self.defs_tech, self.defs_layer = dt, dla
+          self.body_parts = bp
+          continue
+        if not isinstance(item, str):
+          continue
+        if item.startswith("!card1-done!"):
+          payload = json.loads(item[len("!card1-done!"):])
+          self._handle_card1_done(payload)
+        elif item.startswith("!card1-error!"):
+          self._handle_error("card1", item[len("!card1-error!"):])
+        elif item.startswith("!card2-done!"):
+          payload = json.loads(item[len("!card2-done!"):])
+          self._handle_card2_done(payload)
+        elif item.startswith("!card2-error!"):
+          self._handle_error("card2", item[len("!card2-error!"):])
+        elif item.startswith("!card3-done!"):
+          payload = json.loads(item[len("!card3-done!"):])
+          self._handle_card3_done(payload)
+        elif item.startswith("!card3-error!"):
+          self._handle_error("card3", item[len("!card3-error!"):])
         else:
+          # Regular status line from cli._status.
           self._append_log(_strip_ansi(item))
+          self._update_active_status(item)
     except queue.Empty:
       pass
     self.root.after(80, self._poll_log_queue)
+
+  def _update_active_status(self, line: str) -> None:
+    text = _strip_ansi(line).strip()
+    # Drop the leading [Xs] timestamp for the short status line.
+    if text.startswith("["):
+      _, _, rest = text.partition("]")
+      text = rest.strip() or text
+    target = {
+      "card1": self.card1_status,
+      "card2": self.card2_status,
+      "card3": self.card3_status,
+    }.get(self.active_stage or "")
+    if target is not None:
+      target.configure(text=text)
+
+  def _handle_card1_done(self, payload: dict) -> None:
+    names: list[str] = payload["names"]
+    self.pawn_names = names
+    self.pawn_combo["values"] = names
+    self.pawn_combo["state"] = "readonly"
+    if names and not self.pawn_var.get():
+      self.pawn_combo.current(0)
+    mods_note = (
+      f"{payload['n_defs']:,} mod defs"
+      if payload["has_mods"]
+      else "no mod folder — using slug labels"
+    )
+    self.card1_status.configure(
+      text=f"✓ Loaded · {len(names)} pawns · {mods_note}"
+           f"  ({self._elapsed()})",
+    )
+    self.active_stage = None
+    cli.set_status_sink(None)
+    if names:
+      self._render_block_inline()
+
+  def _handle_card2_done(self, payload: dict) -> None:
+    self._set_prompt(payload["prompt"])
+    self._hide_spinner(self.card2_btn, self.card2_spinner)
+    self.card2_status.configure(
+      text=f"✓ Generated in {self._elapsed()}  ·  {payload['model']}",
+    )
+    self.active_stage = None
+    cli.set_status_sink(None)
+
+  def _handle_card3_done(self, payload: dict) -> None:
+    path = Path(payload["path"])
+    self.last_image = path
+    self._show_preview(path)
+    self._hide_spinner(self.card3_btn, self.card3_spinner)
+    self.card3_status.configure(
+      text=f"✓ Wrote {path.name} in {self._elapsed()}",
+    )
+    self.active_stage = None
+    cli.set_status_sink(None)
+
+  def _handle_error(self, stage: str, tb: str) -> None:
+    self.active_stage = None
+    cli.set_status_sink(None)
+    self._append_log(tb)
+    self.log_panel.open()
+    short = (tb.strip().splitlines() or ["(unknown error)"])[-1]
+    spinners = {
+      "card2": (self.card2_btn, self.card2_spinner),
+      "card3": (self.card3_btn, self.card3_spinner),
+    }
+    if stage in spinners:
+      self._hide_spinner(*spinners[stage])
+    target = {
+      "card1": self.card1_status,
+      "card2": self.card2_status,
+      "card3": self.card3_status,
+    }[stage]
+    target.configure(text=f"✗ {short}")
+    messagebox.showerror(APP_NAME, short)
 
   def _append_log(self, line: str) -> None:
     self.log.configure(state="normal")
@@ -561,31 +1207,11 @@ class App:
     self.log.see("end")
     self.log.configure(state="disabled")
 
-  def _clear_log(self) -> None:
-    self.log.configure(state="normal")
-    self.log.delete("1.0", "end")
-    self.log.configure(state="disabled")
-
-  def _finish_success(self) -> None:
-    # Find the most recently written PNG/JPEG in out_dir.
-    out_dir = Path(self.out_var.get()).expanduser()
-    if not out_dir.is_dir():
-      return
-    images = [
-      p for p in out_dir.iterdir()
-      if p.suffix.lower() in (".png", ".jpg", ".jpeg")
-    ]
-    if not images:
-      return
-    latest = max(images, key=lambda p: p.stat().st_mtime)
-    self.last_image = latest
-    self._show_preview(latest)
-
   def _show_preview(self, path: Path) -> None:
     try:
       from PIL import Image, ImageTk
       img = Image.open(path)
-      img.thumbnail((600, 400))
+      img.thumbnail((640, 420))
       photo = ImageTk.PhotoImage(img)
       self.preview_imgref = photo
       self.preview.configure(image=photo, text="")
@@ -594,17 +1220,6 @@ class App:
         text=f"Image ready: {path.name}\n(click to open)", image="",
       )
       self.preview_imgref = None
-
-
-_ANSI_RE = None
-
-
-def _strip_ansi(s: str) -> str:
-  global _ANSI_RE
-  if _ANSI_RE is None:
-    import re
-    _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-  return _ANSI_RE.sub("", s)
 
 
 def main() -> int:

@@ -3,13 +3,26 @@ name = "rimportrait"
 version = "0.1.0"
 description = "Generate AI-image prompt context blocks from RimWorld .rws saves."
 requires-python = ">=3.11"
-dependencies = ["lxml>=5.0", "rimsave"]
+dependencies = [
+  "lxml>=5.0",
+  "rimsave",
+  # Both LLM SDKs ship by default so the GUI's provider radio works
+  # out of the box without the user having to pick at install time.
+  # The CLI honours the same choice.
+  "openai>=1.40",
+  "google-genai>=0.5",
+  # GUI deps. Tkinter itself is stdlib; these cover keychain auth,
+  # image preview, and per-user config.
+  "keyring>=24",
+  "Pillow>=10",
+  "platformdirs>=4",
+]
 
 [project.optional-dependencies]
+# Kept for backward-compat with anyone pinning the old extras.
 openai = ["openai>=1.40"]
 google = ["google-genai>=0.5"]
 llm = ["openai>=1.40", "google-genai>=0.5"]
-gui = ["keyring>=24", "Pillow>=10", "platformdirs>=4"]
 
 [project.scripts]
 rimportrait = "rimportrait.cli:main"

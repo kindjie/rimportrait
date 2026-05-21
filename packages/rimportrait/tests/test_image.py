@@ -94,10 +94,11 @@ def test_is_image_model_id_heuristic():
 def test_dispatch_routes_to_openai_with_family_size_and_model(monkeypatch):
   calls: list[dict] = []
 
-  def fake_openai(prompt, model, *, size):
-    calls.append(
-      {"prompt": prompt, "model": model, "size": size}
-    )
+  def fake_openai(prompt, model, *, size, quality, moderation):
+    calls.append({
+      "prompt": prompt, "model": model, "size": size,
+      "quality": quality, "moderation": moderation,
+    })
     return (b"\x89PNG-openai", "png")
 
   monkeypatch.setattr(llm, "openai_image", fake_openai)
@@ -106,11 +107,38 @@ def test_dispatch_routes_to_openai_with_family_size_and_model(monkeypatch):
   )
   assert png == b"\x89PNG-openai"
   assert ext == "png"
+  # Explicit model IDs default to pro-tier quality.
   assert calls == [{
     "prompt": "p",
     "model": "gpt-image-2-custom",
     "size": "1536x1024",
+    "quality": "high",
+    "moderation": "low",
   }]
+
+
+def test_openai_fast_tier_uses_low_quality(monkeypatch):
+  calls: list[dict] = []
+
+  def fake_openai(prompt, model, *, size, quality, moderation):
+    calls.append({"quality": quality, "moderation": moderation})
+    return (b"x", "png")
+
+  monkeypatch.setattr(llm, "openai_image", fake_openai)
+  llm.generate_image("openai", "p", "portrait", model="fast")
+  assert calls == [{"quality": "low", "moderation": "low"}]
+
+
+def test_openai_pro_tier_uses_high_quality(monkeypatch):
+  calls: list[dict] = []
+
+  def fake_openai(prompt, model, *, size, quality, moderation):
+    calls.append({"quality": quality, "moderation": moderation})
+    return (b"x", "png")
+
+  monkeypatch.setattr(llm, "openai_image", fake_openai)
+  llm.generate_image("openai", "p", "portrait", model="pro")
+  assert calls == [{"quality": "high", "moderation": "low"}]
 
 
 def test_unknown_provider_raises_valueerror():
@@ -126,7 +154,10 @@ def test_unknown_kind_raises_valueerror():
 def test_missing_openai_sdk_raises_with_install_hint(monkeypatch):
   monkeypatch.setitem(sys.modules, "openai", None)
   with pytest.raises(RuntimeError, match=r"openai package not installed"):
-    llm.openai_image("p", "gpt-image-2", size="1024x1536")
+    llm.openai_image(
+      "p", "gpt-image-2", size="1024x1536",
+      quality="high", moderation="low",
+    )
 
 
 def test_missing_google_sdk_raises_with_install_hint(monkeypatch):

@@ -989,18 +989,18 @@ name = "rimportrait"
 version = "0.1.0"
 source = { editable = "packages/rimportrait" }
 dependencies = [
+    { name = "google-genai" },
+    { name = "keyring" },
     { name = "lxml" },
+    { name = "openai" },
+    { name = "pillow" },
+    { name = "platformdirs" },
     { name = "rimsave" },
 ]
 
 [package.optional-dependencies]
 google = [
     { name = "google-genai" },
-]
-gui = [
-    { name = "keyring" },
-    { name = "pillow" },
-    { name = "platformdirs" },
 ]
 llm = [
     { name = "google-genai" },
@@ -1012,17 +1012,19 @@ openai = [
 
 [package.metadata]
 requires-dist = [
+    { name = "google-genai", specifier = ">=0.5" },
     { name = "google-genai", marker = "extra == 'google'", specifier = ">=0.5" },
     { name = "google-genai", marker = "extra == 'llm'", specifier = ">=0.5" },
-    { name = "keyring", marker = "extra == 'gui'", specifier = ">=24" },
+    { name = "keyring", specifier = ">=24" },
     { name = "lxml", specifier = ">=5.0" },
+    { name = "openai", specifier = ">=1.40" },
     { name = "openai", marker = "extra == 'llm'", specifier = ">=1.40" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.40" },
-    { name = "pillow", marker = "extra == 'gui'", specifier = ">=10" },
-    { name = "platformdirs", marker = "extra == 'gui'", specifier = ">=4" },
+    { name = "pillow", specifier = ">=10" },
+    { name = "platformdirs", specifier = ">=4" },
     { name = "rimsave", editable = "packages/rimsave" },
 ]
-provides-extras = ["openai", "google", "llm", "gui"]
+provides-extras = ["openai", "google", "llm"]
 
 [[package]]
 name = "rimportrait-workspace"
