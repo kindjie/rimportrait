@@ -65,6 +65,21 @@ _PROVIDER_ENV = {
   "google": "GEMINI_API_KEY",
 }
 
+# Sibling env vars to clear when we set the canonical one. google-genai
+# warns "Both GOOGLE_API_KEY and GEMINI_API_KEY are set" if both are
+# present; we always set GEMINI_API_KEY, so blank out GOOGLE_API_KEY
+# to silence it. Same idea for any other provider that grows aliases.
+_PROVIDER_SIBLING_ENV = {
+  "google": ("GOOGLE_API_KEY",),
+}
+
+
+def _apply_provider_env(provider: str, key: str) -> None:
+  """Set the canonical env var for ``provider`` and unset siblings."""
+  os.environ[_PROVIDER_ENV[provider]] = key
+  for sibling in _PROVIDER_SIBLING_ENV.get(provider, ()):
+    os.environ.pop(sibling, None)
+
 # Where to send the user to mint a key, one-click from the GUI.
 _PROVIDER_KEY_URL = {
   "openai": "https://platform.openai.com/api-keys",
@@ -172,11 +187,26 @@ def _macos_security_get(provider: str) -> str:
 
 
 def _macos_security_set(provider: str, value: str) -> tuple[bool, str]:
+  """Save a keychain item with `-A` (no per-item ACL).
+
+  Without -A, macOS adds only the writing binary to the item's
+  Access Control List; any other binary that later reads the
+  item (e.g. an unsigned PyInstaller bundle vs the dev-run Python
+  interpreter, or the same .app rebuilt with a different code
+  hash) triggers a permission prompt on every read. -A flattens
+  the ACL so reads from any process owned by this user succeed
+  without prompting. The keychain-unlock prompt (system-level)
+  may still fire once per session if the keychain was locked,
+  but that's a system gate we can't bypass without code signing.
+
+  Existing items written before this change keep their old ACL
+  until the user re-saves; re-saving with -A resets it."""
   import subprocess
   try:
     r = subprocess.run(
       ["/usr/bin/security", "add-generic-password",
-       "-U", "-a", provider, "-s", KEYRING_SERVICE, "-w", value],
+       "-U", "-A",
+       "-a", provider, "-s", KEYRING_SERVICE, "-w", value],
       capture_output=True, text=True, check=False,
     )
   except OSError as e:
@@ -561,7 +591,7 @@ class App:
     ttk.Label(body, text="Provider:").grid(row=0, column=0, sticky="e")
     pf = ttk.Frame(body)
     pf.grid(row=0, column=1, columnspan=2, sticky="w")
-    self.provider_var = tk.StringVar(value="openai")
+    self.provider_var = tk.StringVar(value="google")
     for p in llm.PROVIDERS:
       ttk.Radiobutton(
         pf, text=p, variable=self.provider_var, value=p,
@@ -603,7 +633,7 @@ class App:
     ttk.Label(body, text="Tier:").grid(row=4, column=0, sticky="e")
     tf = ttk.Frame(body)
     tf.grid(row=4, column=1, columnspan=2, sticky="w")
-    self.tier_var = tk.StringVar(value="pro")
+    self.tier_var = tk.StringVar(value="fast")
     for t in ("pro", "fast"):
       ttk.Radiobutton(
         tf, text=t, variable=self.tier_var, value=t,
@@ -1066,7 +1096,7 @@ class App:
     key = self._ensure_key(provider)
     if not key:
       return
-    os.environ[_PROVIDER_ENV[provider]] = key
+    _apply_provider_env(provider, key)
 
     preset_name = self.preset_var.get()
     preset = (
@@ -1164,7 +1194,7 @@ class App:
     key = self._ensure_key(provider)
     if not key:
       return
-    os.environ[_PROVIDER_ENV[provider]] = key
+    _apply_provider_env(provider, key)
 
     out_dir = Path(self.out_var.get()).expanduser()
     try:

@@ -319,14 +319,14 @@ def _build_parser() -> argparse.ArgumentParser:
   )
 
   p.add_argument(
-    "--provider", choices=llm.PROVIDERS, default="openai",
+    "--provider", choices=llm.PROVIDERS, default="google",
     help=(
-      "LLM provider (default: openai). Reads API key from "
-      "OPENAI_API_KEY (openai) or GEMINI_API_KEY (google)."
+      "LLM provider (default: google). Reads API key from "
+      "GEMINI_API_KEY (google) or OPENAI_API_KEY (openai)."
     ),
   )
   p.add_argument(
-    "--model", default=None, metavar="TIER|MODEL_ID",
+    "--model", default="fast", metavar="TIER|MODEL_ID",
     help=(
       "Model tier ('fast' or 'pro', default 'pro') or an explicit "
       "model ID. Explicit IDs only override the matching step "

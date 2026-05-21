@@ -14,7 +14,7 @@ from rimportrait.style import StylePreset, StyleSection
 def test_presets_have_expected_starter_names():
   expected = {
     "renaissance", "acrylic", "action",
-    "comic", "anime", "propaganda", "pixel-art",
+    "comic", "anime", "pinup", "propaganda", "pixel-art",
   }
   assert expected == set(style.PRESETS.keys()), (
     "If you rename or remove presets, update the README's preset "

@@ -50,6 +50,7 @@ class StyleSection:
     places: the ``End with:`` line of the Output format section
     and validation item 10's exact-phrase check.
   """
+
   prose: str
   mode_trigger: str
   closer_phrase: str
@@ -60,8 +61,7 @@ class StyleSection:
 RENAISSANCE_SECTION = StyleSection(
   mode_trigger="An Old Masters oil painting",
   closer_phrase=(
-    "Old Masters oil painting RimWorld sci-fi colony portrait, "
-    "no UI."
+    "Old Masters oil painting RimWorld sci-fi colony portrait, no UI."
   ),
   prose=(
     "Style:\n"
@@ -94,8 +94,7 @@ RENAISSANCE_SECTION = StyleSection(
 ACRYLIC_SECTION = StyleSection(
   mode_trigger="A vibrant acrylic painting",
   closer_phrase=(
-    "vibrant acrylic painting RimWorld sci-fi colony portrait, "
-    "no UI."
+    "vibrant acrylic painting RimWorld sci-fi colony portrait, no UI."
   ),
   prose=(
     "Style:\n"
@@ -257,8 +256,7 @@ ANIME_SECTION = StyleSection(
 PROPAGANDA_SECTION = StyleSection(
   mode_trigger="A stark Soviet propaganda poster",
   closer_phrase=(
-    "stark Soviet propaganda poster RimWorld sci-fi colony "
-    "portrait, no UI."
+    "stark Soviet propaganda poster RimWorld sci-fi colony portrait, no UI."
   ),
   prose=(
     "Style:\n"
@@ -291,8 +289,7 @@ PROPAGANDA_SECTION = StyleSection(
 PIXEL_ART_SECTION = StyleSection(
   mode_trigger="A high-detail painterly pixel-art portrait",
   closer_phrase=(
-    "high-detail painterly pixel-art RimWorld sci-fi colony "
-    "portrait, no UI."
+    "high-detail painterly pixel-art RimWorld sci-fi colony portrait, no UI."
   ),
   prose=(
     "Style:\n"
@@ -319,24 +316,91 @@ PIXEL_ART_SECTION = StyleSection(
 )
 
 
+PINUP_SECTION = StyleSection(
+  mode_trigger="A mid-century American pinup illustration",
+  closer_phrase=(
+    "mid-century American pinup illustration RimWorld sci-fi "
+    "colony pinup, no UI."
+  ),
+  prose=(
+    "Style:\n"
+    "Classic 1940s–1950s American calendar-pinup illustration: "
+    "warm, glamorous, lightly cheeky. Idealised "
+    "but friendly proportions, soft airbrushed forms, painterly "
+    "edges. This is a PAINTING, not a photograph and not a "
+    "digital render: gouache-and-airbrush vocabulary, no lens "
+    "language.\n\n"
+    "Pose and expression:\n"
+    "Playful, coy posture with implied motion — caught mid-stride, "
+    "perched on a crate, leaning against a wall, hand brushing a "
+    "stray hair from the cheek, glancing back over the shoulder, "
+    "wrist propped on a hip. One knee softly bent. Confident "
+    "warm smile or a teasing closed-lip half-smile that just "
+    "reaches the eyes. Gaze direct to camera. No sneering, no "
+    "stern combat scowl, no heavy action.\n\n"
+    "Wardrobe handling:\n"
+    "Whatever the subject is wearing per the source block — armor, "
+    "uniform, work clothes — render it tailored and form-flattering, "
+    "with a small playful styling cue (a sleeve pushed up, a collar "
+    "loosened, a glove tucked into a belt). Keep coverage consistent "
+    "with the source; do not remove clothing or sexualise.\n\n"
+    "Hair and makeup:\n"
+    "Hair styled with deliberate set and bounce — soft curls, "
+    "victory rolls, a swept side-part — even when the source says "
+    "the pawn's hair is loose. Subtle stylised makeup: clean "
+    "brows, soft blush across the cheekbones, glossy stylised lip "
+    "in a warm red or pink. No heavy contour, no smoky grunge.\n\n"
+    "Composition:\n"
+    "Full or three-quarter figure on a clean uncluttered background — "
+    "a flat colour field, a tidy bit of set dressing (rolled "
+    "blueprint, leaning rifle, painted sign), or a plain pinup "
+    "backdrop. Background is decoration, not narrative.\n\n"
+    "Lighting:\n"
+    "Bright soft frontal key with a gentle warm fill. Skin reads "
+    "smooth and luminous, never harshly shadowed. A small specular "
+    "kicker on the lip and eye for sparkle. No dramatic rim, no "
+    "deep theatrical chiaroscuro.\n\n"
+    "Palette:\n"
+    "Saturated cheerful mid-century colours — cherry red, sky blue, "
+    "lemon yellow, butter cream, candy mint — anchored by warm "
+    "peach skin tones. No grim earth-tone grade, no cool desaturated "
+    "modern colour-grading.\n\n"
+    "Medium texture:\n"
+    "Smooth airbrushed gouache rendering on illustration board: "
+    "soft graduated transitions across skin and fabric, slightly "
+    "stylised crisp edges where forms meet (lip line, eyelash, "
+    "shirt cuff), occasional brush hatching in hair and shadow "
+    "seams, a faint paper tooth visible at the lightest passages, "
+    "subtle period print-grain across the surface.\n\n"
+    "Avoid (style-dependent):\n"
+    "Photographic language, lens artifacts, depth-of-field blur, "
+    "anime cel-shading, heavy oil impasto, dark earth-tone heroic-"
+    "fantasy palette, brooding scowl, combat snarl, explicit or "
+    "sexualised posing or wardrobe, modern airbrush porn-mag finish."
+  ),
+)
+
+
 @dataclass(frozen=True)
 class StylePreset:
   """A named preset is a :class:`StyleSection` plus an optional
   ``base`` instruction swap (only used by ``action`` today, which
   pairs with ``base="action"`` to also switch the core
   instruction file from the portrait template to the action one)."""
+
   section: StyleSection
   base: str | None = None
 
 
 PRESETS: dict[str, StylePreset] = {
   "renaissance": StylePreset(section=RENAISSANCE_SECTION),
-  "acrylic":     StylePreset(section=ACRYLIC_SECTION),
-  "action":      StylePreset(section=ACTION_SECTION, base="action"),
-  "comic":       StylePreset(section=COMIC_SECTION),
-  "anime":       StylePreset(section=ANIME_SECTION),
-  "propaganda":  StylePreset(section=PROPAGANDA_SECTION),
-  "pixel-art":   StylePreset(section=PIXEL_ART_SECTION),
+  "acrylic": StylePreset(section=ACRYLIC_SECTION),
+  "action": StylePreset(section=ACTION_SECTION, base="action"),
+  "comic": StylePreset(section=COMIC_SECTION),
+  "anime": StylePreset(section=ANIME_SECTION),
+  "pinup": StylePreset(section=PINUP_SECTION),
+  "propaganda": StylePreset(section=PROPAGANDA_SECTION),
+  "pixel-art": StylePreset(section=PIXEL_ART_SECTION),
 }
 
 
@@ -367,19 +431,20 @@ def compose_instruction(
   """
   # Lazy import to avoid the style ↔ render circular dependency at
   # module load.
-  from .render import instruction_for, _KIND_TO_DEFAULT_SECTION
+  from .render import _KIND_TO_DEFAULT_SECTION, instruction_for
+
   effective = effective_kind or kind
-  section = preset.section if preset is not None \
-            else _KIND_TO_DEFAULT_SECTION[kind]
+  section = (
+    preset.section if preset is not None else _KIND_TO_DEFAULT_SECTION[kind]
+  )
   if user_style:
     section = StyleSection(
-      prose=(
-        section.prose
-        + f"\n\nAdditional style note:\n{user_style}."
-      ),
+      prose=(section.prose + f"\n\nAdditional style note:\n{user_style}."),
       mode_trigger=section.mode_trigger,
       closer_phrase=section.closer_phrase,
     )
   return instruction_for(
-    effective, image_model=image_model, section=section,
+    effective,
+    image_model=image_model,
+    section=section,
   )

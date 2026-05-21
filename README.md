@@ -168,11 +168,12 @@ Defaults the CLI uses:
 
 | Concern | Default | Notes |
 |---|---|---|
-| Provider | `openai` | Reads `OPENAI_API_KEY`. Switch with `--provider google` (uses `GEMINI_API_KEY` or `GOOGLE_API_KEY`). |
-| Text model (openai) | `gpt-5.5` | `--model fast` swaps to `gpt-4o`. |
-| Image model (openai) | `gpt-image-2` | No separate fast tier on OpenAI. |
-| Text model (google) | `gemini-3.1-pro-preview` | `--model fast` swaps to `gemini-flash-latest`. |
-| Image model (google) | `gemini-3-pro-image-preview` (Nano Banana Pro) | `--model fast` swaps to `gemini-3.1-flash-image-preview` (Nano Banana 2). |
+| Provider | `google` | Reads `GEMINI_API_KEY` (or `GOOGLE_API_KEY`). Switch with `--provider openai` (uses `OPENAI_API_KEY`). |
+| Tier | `fast` | Cheaper and quicker; bump to `--model pro` for finals. |
+| Text model (google) | `gemini-flash-latest` (fast) | `--model pro` swaps to `gemini-3.1-pro-preview`. |
+| Image model (google) | `gemini-3.1-flash-image-preview` (Nano Banana 2, fast) | `--model pro` swaps to `gemini-3-pro-image-preview` (Nano Banana Pro). |
+| Text model (openai) | `gpt-4o` (fast) | `--model pro` swaps to `gpt-5.5`. |
+| Image model (openai) | `gpt-image-2` | No separate fast tier on OpenAI; quality flag follows the tier (`low`/`high`). |
 | Portrait aspect | 3:4 | Single-pawn frame. |
 | Family aspect | 4:3 | Wider frame for groups. |
 
@@ -202,6 +203,7 @@ Starter presets (`--preset NAME`):
 | `acrylic`        | vibrant contemporary acrylic painting on canvas — saturated palette, opaque flat-layered colour blocks, visible bristle-brush marks |
 | `comic`          | Western graphic novel ink illustration; bold halftone shading, hard-edged spot color |
 | `anime`          | Japanese cel-shaded illustration; clean line art, two-tone shadows, painted backgrounds, 90s OVA grain |
+| `pinup`          | Mid-century American calendar-pinup illustration; airbrushed gouache, playful coy pose, victory-roll styling, bright candy palette over warm peach skin |
 | `propaganda`     | stark Soviet propaganda poster, heroic low angle, hard edges |
 | `pixel-art`      | modern painterly pixel art; hand-placed pixels, limited palette, dithered highlights |
 
