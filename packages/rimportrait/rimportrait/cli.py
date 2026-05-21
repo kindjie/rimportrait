@@ -93,6 +93,34 @@ def _error(msg: str) -> str:
   return f"{_red('error:')} {msg}"
 
 
+# Wall-clock start of the script; used by `_status` to stamp each
+# progress line with elapsed seconds so the user can see things are
+# happening during the long-running LLM + image steps.
+_T0: float = 0.0
+# Suppresses status lines (set by main() for the cheap
+# block-to-stdout path where progress noise would interleave with
+# the rendered block on the next pipe).
+_QUIET: bool = False
+
+
+def _status(msg: str, suffix: str | None = None) -> None:
+  """Print a progress line to stderr: ``[Xs] msg [suffix]``.
+
+  Suffix (when given) is dimmed; useful for incidental detail
+  like a mod count or model id. Silently no-ops when ``_QUIET`` is
+  set."""
+  if _QUIET:
+    return
+  import time
+  elapsed = time.monotonic() - _T0
+  stamp = _dim(f"[{elapsed:5.1f}s]")
+  if suffix:
+    sys.stderr.write(f"{stamp} {msg} {_dim(suffix)}\n")
+  else:
+    sys.stderr.write(f"{stamp} {msg}\n")
+  sys.stderr.flush()
+
+
 class _RimportraitParser(argparse.ArgumentParser):
   """Argparse parser with a friendlier error path.
 
@@ -426,19 +454,30 @@ def _composed_instruction(
 
 
 def _llm_polish(
-  args: argparse.Namespace, block: str, kind: str
+  args: argparse.Namespace, block: str, kind: str, name: str,
 ) -> str:
   """Run the block through the LLM. Caller checks the mode first."""
   system = _composed_instruction(args, kind)
+  text_model = llm.resolve_model(args.provider, "text", args.model)
+  _status(
+    f"Generating {kind} prompt for {name}",
+    f"({args.provider} {text_model})",
+  )
   return llm.complete(
     args.provider, system=system, user=block, model=args.model,
   )
 
 
 def _write_image(
-  args: argparse.Namespace, prompt: str, pawn: PawnRecord, kind: str
+  args: argparse.Namespace, prompt: str, pawn: PawnRecord, kind: str,
+  name: str,
 ) -> None:
   """Generate the image and write it next to the prompt."""
+  image_model = llm.resolve_model(args.provider, "image", args.model)
+  _status(
+    f"Generating {kind} image for {name}",
+    f"({args.provider} {image_model})",
+  )
   png, ext = llm.generate_image(
     args.provider, prompt, kind, model=args.model,
   )
@@ -446,7 +485,9 @@ def _write_image(
   assert out_dir is not None  # validated in main
   out_dir.mkdir(parents=True, exist_ok=True)
   fname = f"{_slug(pawn.label or pawn.name_full)}.{kind}.{ext}"
-  (out_dir / fname).write_bytes(png)
+  path = out_dir / fname
+  path.write_bytes(png)
+  _status(f"Wrote {path}")
 
 
 def _render_one(
@@ -462,21 +503,34 @@ def _render_one(
   --block-and-instruction-only is set, in which case the composed
   system instruction is appended too (paste-into-chat workflow).
   Prompt mode runs the LLM; image mode runs LLM then image gen."""
+  name = p.label or p.nickname or p.name_full or "pawn"
   if mode == MODE_BLOCK:
     text = block
     if args.block_and_instruction_only:
       text = block + "\n\n" + _composed_instruction(args, kind)
     _emit_text(args.out_dir, text, p, kind)
+    if args.out_dir is not None:
+      _status(f"Wrote {args.out_dir / _slug(name)}.{kind}.txt")
     return
-  prompt = _llm_polish(args, block, kind)
+  prompt = _llm_polish(args, block, kind, name)
   _emit_text(args.out_dir, prompt, p, kind)
+  if args.out_dir is not None:
+    _status(f"Wrote {args.out_dir / _slug(name)}.{kind}.txt")
   if mode == MODE_IMAGE:
-    _write_image(args, prompt, p, kind)
+    _write_image(args, prompt, p, kind, name)
 
 
 def main(argv: list[str] | None = None) -> int:
+  import time
+  global _T0
+  _T0 = time.monotonic()
   args = _build_parser().parse_args(argv)
   mode = _resolve_mode(args)
+  # Progress lines are useful when the pipeline does real work
+  # (LLM and/or image gen). For the cheap block-only-to-stdout
+  # path they're noise.
+  global _QUIET
+  _QUIET = (mode == MODE_BLOCK and args.out_dir is None)
 
   if args.family and not args.pawn:
     print(_error(
@@ -507,12 +561,18 @@ def main(argv: list[str] | None = None) -> int:
     ), file=sys.stderr)
     return 2
 
+  _status(f"Loading save", f"({args.savefile})")
   save = load_save(args.savefile)
   # The trailing instruction is now handled exclusively by the
   # --with-instruction post-processor in _render_one, so the block
   # itself is always rendered instruction-free regardless of mode.
+  _status("Building mod-aware def index")
   (def_index, defs_desc, defs_label, defs_cat, defs_cost, defs_tech,
    defs_layer) = _build_index(save, args)
+  if def_index is not None:
+    _status(
+      "Def index ready", f"({len(def_index)} defs)",
+    )
   body_parts = _build_body_parts(args)
 
   try:
