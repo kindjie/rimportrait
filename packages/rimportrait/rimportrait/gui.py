@@ -149,39 +149,102 @@ def _save_config(cfg: dict) -> None:
   _config_path().write_text(json.dumps(cfg, indent=2))
 
 
-# Per-process cache for keychain reads. Each macOS keychain read
-# on an unsigned binary triggers a "Allow … to access your keychain"
-# prompt; we never need to re-read within a session, so cache.
+# Per-process cache for keychain reads. Each read on an unsigned
+# macOS binary can trigger a permission prompt; we never need to
+# re-read within a session, so cache.
 _KEYCHAIN_CACHE: dict[str, str] = {}
+
+
+def _macos_security_get(provider: str) -> str:
+  """Read via Apple's /usr/bin/security (signed, doesn't need our
+  app to carry keychain entitlements). Used as a fallback when
+  python-keyring fails inside an unsigned .app bundle."""
+  import subprocess
+  try:
+    r = subprocess.run(
+      ["/usr/bin/security", "find-generic-password",
+       "-a", provider, "-s", KEYRING_SERVICE, "-w"],
+      capture_output=True, text=True, check=False,
+    )
+  except OSError:
+    return ""
+  return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _macos_security_set(provider: str, value: str) -> tuple[bool, str]:
+  import subprocess
+  try:
+    r = subprocess.run(
+      ["/usr/bin/security", "add-generic-password",
+       "-U", "-a", provider, "-s", KEYRING_SERVICE, "-w", value],
+      capture_output=True, text=True, check=False,
+    )
+  except OSError as e:
+    return (False, f"OSError calling security CLI: {e}")
+  if r.returncode == 0:
+    return (True, "")
+  return (False, f"security CLI exited {r.returncode}: "
+                 f"{(r.stderr or r.stdout).strip()}")
+
+
+def _is_macos_bundle() -> bool:
+  """True when running inside a PyInstaller .app on macOS.
+
+  Frozen bundles are unsigned by default, so keyring's
+  Security.framework calls return errSecMissingEntitlements and
+  trigger a prompt before failing. Routing straight to the
+  /usr/bin/security CLI in that case avoids the double prompt
+  (keyring's path attempt + the CLI fallback)."""
+  import sys as _sys
+  return _sys.platform == "darwin" and getattr(_sys, "frozen", False)
 
 
 def _keychain_get(provider: str) -> str:
   if provider in _KEYCHAIN_CACHE:
     return _KEYCHAIN_CACHE[provider]
-  try:
-    import keyring
-    val = keyring.get_password(KEYRING_SERVICE, provider) or ""
-  except Exception:
-    val = ""
+  import sys as _sys
+  val = ""
+  if _is_macos_bundle():
+    val = _macos_security_get(provider)
+  else:
+    try:
+      import keyring
+      val = keyring.get_password(KEYRING_SERVICE, provider) or ""
+    except Exception:
+      val = ""
+    # Defensive fallback for dev runs where keyring happens to fail.
+    if not val and _sys.platform == "darwin":
+      val = _macos_security_get(provider)
   _KEYCHAIN_CACHE[provider] = val
   return val
 
 
 def _keychain_set(provider: str, value: str) -> tuple[bool, str]:
-  """Returns (ok, error_message). On macOS the first call triggers a
-  Keychain auth prompt; if the user cancels or denies, the backend
-  raises and we surface the real reason instead of a generic note."""
+  """Returns (ok, error_message). On PyInstaller bundles go
+  straight to /usr/bin/security so we don't double-prompt."""
+  import sys as _sys
+  if _is_macos_bundle():
+    ok, err = _macos_security_set(provider, value)
+    if ok:
+      _KEYCHAIN_CACHE[provider] = value
+    return (ok, err)
+  err = ""
   try:
     import keyring
-  except ImportError:
-    return (False, "keyring package not installed (install the "
-                    "[gui] extra)")
-  try:
     keyring.set_password(KEYRING_SERVICE, provider, value)
-    _KEYCHAIN_CACHE[provider] = value  # keep cache in sync
+    _KEYCHAIN_CACHE[provider] = value
     return (True, "")
+  except ImportError:
+    err = "keyring package not installed (install the [gui] extra)"
   except Exception as e:
-    return (False, f"{type(e).__name__}: {e}")
+    err = f"{type(e).__name__}: {e}"
+  if _sys.platform == "darwin":
+    ok, cli_err = _macos_security_set(provider, value)
+    if ok:
+      _KEYCHAIN_CACHE[provider] = value
+      return (True, "")
+    err = f"{err}; security CLI also failed: {cli_err}"
+  return (False, err)
 
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -403,10 +466,13 @@ class App:
 
     self._build_layout()
     self._populate_saves()
-    # Single keychain read at startup. _on_provider_change handles
-    # both prefill and the "Account auto-opens if key missing"
-    # decision; calling _prefill_key separately doubled the macOS
-    # keychain-permission prompt on unsigned builds.
+    # We do NOT touch the keychain at startup — every read triggers
+    # a permission prompt on unsigned macOS builds, and unsolicited
+    # OS dialogs before the app even renders feel sketchy. Instead
+    # _on_provider_change updates the "Load saved key" affordance
+    # based on a per-config flag of providers we've stored a key
+    # for, and opens the Account section only when there's nothing
+    # to load.
     self._on_provider_change()
     # React to provider/tier flips with a fresh model-label render.
     self.provider_var.trace_add("write", self._refresh_model_labels)
@@ -506,16 +572,26 @@ class App:
     ).grid(row=2, column=1, sticky="ew", padx=4)
     kbtns = ttk.Frame(body)
     kbtns.grid(row=2, column=2, sticky="w")
+    # "Load saved key" only shows if the user has previously saved
+    # a key for this provider; clicking it is what actually hits
+    # the OS keychain (and triggers the per-app permission prompt
+    # on unsigned macOS builds), so the prompt happens on user
+    # gesture instead of at startup.
+    self.load_key_btn = ttk.Button(
+      kbtns, text="Load saved key", command=self._load_saved_key,
+    )
+    self.load_key_btn.pack(side="left")
     ttk.Button(
       kbtns, text="Save to keychain", command=self._save_key,
-    ).pack(side="left")
+    ).pack(side="left", padx=(4, 0))
     ttk.Button(
       kbtns, text="Get a key →", command=self._open_key_page,
     ).pack(side="left", padx=(4, 0))
     _help(
       body,
       "Stored in your OS keychain (macOS Keychain / Windows "
-      "Credential Manager). Set once.",
+      "Credential Manager). Click 'Load saved key' to recall a "
+      "previously-saved one (asks your OS for permission).",
     ).grid(row=3, column=1, columnspan=2, sticky="w", padx=4, pady=(0, 4))
 
     ttk.Label(body, text="Tier:").grid(row=4, column=0, sticky="e")
@@ -981,13 +1057,8 @@ class App:
       if not ok:
         return
     provider = self.provider_var.get()
-    key = self.key_var.get().strip()
+    key = self._ensure_key(provider)
     if not key:
-      self.account.open()
-      messagebox.showerror(
-        APP_NAME,
-        f"Paste your {provider} API key in the Account section first.",
-      )
       return
     os.environ[_PROVIDER_ENV[provider]] = key
 
@@ -1084,13 +1155,8 @@ class App:
       messagebox.showerror(APP_NAME, "Generate a prompt first.")
       return
     provider = self.provider_var.get()
-    key = self.key_var.get().strip()
+    key = self._ensure_key(provider)
     if not key:
-      self.account.open()
-      messagebox.showerror(
-        APP_NAME,
-        f"Paste your {provider} API key in the Account section first.",
-      )
       return
     os.environ[_PROVIDER_ENV[provider]] = key
 
@@ -1170,12 +1236,65 @@ class App:
   # ----- Account actions -----------------------------------------
 
   def _on_provider_change(self) -> None:
-    self._prefill_key()
-    if not self.key_var.get():
+    """Update key-field UI on provider toggle without touching the
+    keychain. Clears any key field carried over from the previous
+    provider (different providers have different keys) and
+    refreshes the visibility of the 'Load saved key' button based
+    on whether we've previously persisted a key for this provider."""
+    self.key_var.set("")
+    self._refresh_load_key_btn()
+    # Auto-open Account on first run / when there's nothing to load.
+    provider = self.provider_var.get()
+    if provider not in self.cfg.get("saved_key_providers", []):
       self.account.open()
 
-  def _prefill_key(self) -> None:
-    self.key_var.set(_keychain_get(self.provider_var.get()))
+  def _refresh_load_key_btn(self) -> None:
+    has_saved = self.provider_var.get() in self.cfg.get(
+      "saved_key_providers", [],
+    )
+    if hasattr(self, "load_key_btn"):
+      self.load_key_btn["state"] = "normal" if has_saved else "disabled"
+
+  def _ensure_key(self, provider: str) -> str:
+    """Resolve the API key for ``provider`` at Generate time.
+
+    1. If the key field is filled, use that (pasted-in or
+       previously loaded).
+    2. Otherwise, if the config says we have a saved key for this
+       provider, transparently fetch it from the keychain. Saves
+       the user a separate 'Load saved key' click in the common
+       case of "I saved it on a previous run, just run".
+    3. Otherwise, open the Account section and tell the user to
+       paste a key."""
+    key = self.key_var.get().strip()
+    if key:
+      return key
+    if provider in self.cfg.get("saved_key_providers", []):
+      key = _keychain_get(provider)
+      if key:
+        self.key_var.set(key)
+        self._append_log(f"Loaded saved {provider} key from keychain.")
+        return key
+    self.account.open()
+    messagebox.showerror(
+      APP_NAME,
+      f"Paste your {provider} API key in the Account section first "
+      "(then 'Save to keychain' to remember it).",
+    )
+    return ""
+
+  def _load_saved_key(self) -> None:
+    """Read the keychain on explicit user click. This is the only
+    code path that hits the keychain for reads."""
+    val = _keychain_get(self.provider_var.get())
+    if val:
+      self.key_var.set(val)
+      self._append_log("Loaded saved API key from keychain.")
+    else:
+      messagebox.showinfo(
+        APP_NAME,
+        "No saved key was found in the keychain for this provider.",
+      )
 
   def _open_key_page(self) -> None:
     import webbrowser
@@ -1184,9 +1303,19 @@ class App:
       webbrowser.open(url)
 
   def _save_key(self) -> None:
-    ok, err = _keychain_set(self.provider_var.get(), self.key_var.get())
+    provider = self.provider_var.get()
+    ok, err = _keychain_set(provider, self.key_var.get())
     if ok:
       self._append_log("Saved API key to keychain.")
+      # Track which providers have a stored key so we can enable
+      # "Load saved key" on future launches without hitting the
+      # keychain just to find out.
+      saved = list(self.cfg.get("saved_key_providers", []))
+      if provider not in saved:
+        saved.append(provider)
+        self.cfg["saved_key_providers"] = saved
+        _save_config(self.cfg)
+      self._refresh_load_key_btn()
     else:
       messagebox.showwarning(
         APP_NAME,
